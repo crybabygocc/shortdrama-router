@@ -1,0 +1,28 @@
+# Environment and credentials
+.env
+.env.*
+!.env.example
+credentials/
+sessions/
+cookies/
+*.pem
+*.key
+
+# Runtime data
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+
+# Build and editor output
+dist/
+build/
+coverage/
+.DS_Store
+.idea/
+.vscode/
+node_modules/
+__pycache__/
+.pytest_cache/

@@ -1,0 +1,602 @@
+openapi: 3.1.0
+info:
+  title: shortdrama-router API
+  version: 0.1.0
+  description: >-
+    Draft compatibility contract for routing short-drama and AI video creation
+    platforms through existing OpenAI Videos and OpenRouter Video APIs.
+  license:
+    name: MIT
+    identifier: MIT
+servers:
+  - url: '{scheme}://{host}'
+    description: Self-hosted shortdrama-router
+    variables:
+      scheme:
+        default: http
+        enum: [http, https]
+      host:
+        default: localhost:8080
+tags:
+  - name: OpenAI Videos
+    description: OpenAI-compatible video resources and operations.
+  - name: OpenRouter Video
+    description: OpenRouter-compatible multi-provider video generation.
+security:
+  - bearerAuth: []
+paths:
+  /v1/videos:
+    post:
+      tags: [OpenAI Videos]
+      operationId: createVideo
+      summary: Create a video job using the OpenAI Videos shape
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpenAIVideoCreateRequest'
+      responses:
+        '200':
+          description: Video job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIVideo'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [OpenAI Videos]
+      operationId: listVideos
+      summary: List OpenAI-style video jobs
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: order
+          in: query
+          schema:
+            enum: [asc, desc]
+            default: desc
+      responses:
+        '200':
+          description: Video job list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIVideoList'
+        '401':
+          $ref: '#/components/responses/Error'
+  /v1/videos/{video_id}:
+    get:
+      tags: [OpenAI Videos]
+      operationId: retrieveVideo
+      summary: Retrieve an OpenAI-style video job
+      parameters:
+        - $ref: '#/components/parameters/VideoId'
+      responses:
+        '200':
+          description: Current video job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIVideo'
+        '404':
+          $ref: '#/components/responses/Error'
+    delete:
+      tags: [OpenAI Videos]
+      operationId: deleteVideo
+      summary: Delete a video job and retained content
+      parameters:
+        - $ref: '#/components/parameters/VideoId'
+      responses:
+        '200':
+          description: Deletion result
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, object, deleted]
+                properties:
+                  id:
+                    type: string
+                  object:
+                    const: video.deleted
+                  deleted:
+                    type: boolean
+        '404':
+          $ref: '#/components/responses/Error'
+  /v1/videos/{video_id}/content:
+    get:
+      tags: [OpenAI Videos]
+      operationId: downloadVideo
+      summary: Download completed video content
+      parameters:
+        - $ref: '#/components/parameters/VideoId'
+      responses:
+        '200':
+          description: Generated video bytes
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /v1/videos/edits:
+    post:
+      tags: [OpenAI Videos]
+      operationId: editVideo
+      summary: Edit a completed video using the OpenAI Videos shape
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [prompt, video]
+              properties:
+                prompt:
+                  type: string
+                  minLength: 1
+                  maxLength: 32000
+                video:
+                  $ref: '#/components/schemas/VideoReference'
+      responses:
+        '200':
+          description: Edit job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIVideo'
+        '400':
+          $ref: '#/components/responses/Error'
+  /v1/videos/extensions:
+    post:
+      tags: [OpenAI Videos]
+      operationId: extendVideo
+      summary: Extend a completed video using the OpenAI Videos shape
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [prompt, seconds, video]
+              properties:
+                prompt:
+                  type: string
+                  minLength: 1
+                  maxLength: 32000
+                seconds:
+                  enum: ['4', '8', '12', '16', '20']
+                video:
+                  $ref: '#/components/schemas/VideoReference'
+      responses:
+        '200':
+          description: Extension job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIVideo'
+        '400':
+          $ref: '#/components/responses/Error'
+  /v1/videos/{video_id}/remix:
+    post:
+      tags: [OpenAI Videos]
+      operationId: remixVideo
+      summary: Remix a completed video with a refreshed prompt
+      parameters:
+        - $ref: '#/components/parameters/VideoId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  minLength: 1
+                  maxLength: 32000
+      responses:
+        '200':
+          description: Remix job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenAIVideo'
+        '400':
+          $ref: '#/components/responses/Error'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/videos:
+    post:
+      tags: [OpenRouter Video]
+      operationId: createOpenRouterVideo
+      summary: Create a multi-provider video job using the OpenRouter shape
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenRouterVideoCreateRequest'
+      responses:
+        '202':
+          description: Video generation request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenRouterVideo'
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '402':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v1/videos/{video_id}:
+    get:
+      tags: [OpenRouter Video]
+      operationId: retrieveOpenRouterVideo
+      summary: Retrieve an OpenRouter-style video job
+      parameters:
+        - $ref: '#/components/parameters/VideoId'
+      responses:
+        '200':
+          description: Current video job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenRouterVideo'
+        '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/videos/{video_id}/content:
+    get:
+      tags: [OpenRouter Video]
+      operationId: downloadOpenRouterVideo
+      summary: Download OpenRouter-style video content
+      parameters:
+        - $ref: '#/components/parameters/VideoId'
+        - name: index
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Generated video bytes
+          content:
+            video/mp4:
+              schema:
+                type: string
+                format: binary
+        '404':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v1/videos/models:
+    get:
+      tags: [OpenRouter Video]
+      operationId: listOpenRouterVideoModels
+      summary: List video models and supported parameters
+      responses:
+        '200':
+          description: Video model list
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/OpenRouterVideoModel'
+        '401':
+          $ref: '#/components/responses/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: shortdrama-router key
+  parameters:
+    VideoId:
+      name: video_id
+      in: path
+      required: true
+      schema:
+        type: string
+  responses:
+    Error:
+      description: Request failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorEnvelope'
+  schemas:
+    OpenAIVideoCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [prompt]
+      properties:
+        prompt:
+          type: string
+          minLength: 1
+          maxLength: 32000
+        input_reference:
+          $ref: '#/components/schemas/InputReference'
+        model:
+          type: string
+          description: Provider-qualified model ID. A deployment may define a default.
+        seconds:
+          enum: ['4', '8', '12']
+        size:
+          enum: [720x1280, 1280x720, 1024x1792, 1792x1024]
+    InputReference:
+      type: object
+      additionalProperties: false
+      properties:
+        file_id:
+          type: string
+        image_url:
+          type: string
+          description: Fully qualified URL or base64-encoded data URL.
+      oneOf:
+        - required: [file_id]
+          properties:
+            file_id:
+              type: string
+        - required: [image_url]
+          properties:
+            image_url:
+              type: string
+    VideoReference:
+      type: object
+      additionalProperties: false
+      required: [id]
+      properties:
+        id:
+          type: string
+    OpenAIVideo:
+      type: object
+      required: [id, object, model, status, progress, created_at, seconds, size]
+      properties:
+        id:
+          type: string
+        object:
+          const: video
+        model:
+          type: string
+        status:
+          enum: [queued, in_progress, completed, failed]
+        progress:
+          type: number
+          minimum: 0
+          maximum: 100
+        created_at:
+          type: integer
+          format: int64
+        completed_at:
+          type: [integer, 'null']
+          format: int64
+        expires_at:
+          type: [integer, 'null']
+          format: int64
+        error:
+          oneOf:
+            - $ref: '#/components/schemas/ErrorObject'
+            - type: 'null'
+        prompt:
+          type: [string, 'null']
+        remixed_from_video_id:
+          type: [string, 'null']
+        seconds:
+          type: string
+        size:
+          type: string
+        quality:
+          type: string
+    OpenAIVideoList:
+      type: object
+      required: [object, data, has_more]
+      properties:
+        object:
+          const: list
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenAIVideo'
+        first_id:
+          type: [string, 'null']
+        last_id:
+          type: [string, 'null']
+        has_more:
+          type: boolean
+    OpenRouterVideoCreateRequest:
+      type: object
+      additionalProperties: false
+      required: [model, prompt]
+      properties:
+        model:
+          type: string
+          examples: [kling/kling-video]
+        prompt:
+          type: string
+          minLength: 1
+        duration:
+          type: integer
+          minimum: 1
+        resolution:
+          type: string
+          examples: [720p, 1080p]
+        aspect_ratio:
+          type: string
+          examples: ['16:9', '9:16', '1:1']
+        size:
+          type: string
+          pattern: '^[1-9][0-9]*x[1-9][0-9]*$'
+        frame_images:
+          type: array
+          items:
+            $ref: '#/components/schemas/FrameImage'
+        input_references:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenRouterInputReference'
+        generate_audio:
+          type: boolean
+        seed:
+          type: integer
+        callback_url:
+          type: string
+          format: uri
+        provider:
+          $ref: '#/components/schemas/OpenRouterProviderConfig'
+    FrameImage:
+      type: object
+      additionalProperties: false
+      required: [type, image_url, frame_type]
+      properties:
+        type:
+          const: image_url
+        image_url:
+          type: object
+          additionalProperties: false
+          required: [url]
+          properties:
+            url:
+              type: string
+        frame_type:
+          enum: [first_frame, last_frame]
+    OpenRouterInputReference:
+      type: object
+      required: [type]
+      properties:
+        type:
+          enum: [image_url, audio_url, video_url]
+        image_url:
+          type: object
+          additionalProperties: false
+          required: [url]
+          properties:
+            url:
+              type: string
+        audio_url:
+          type: object
+          additionalProperties: false
+          required: [url]
+          properties:
+            url:
+              type: string
+        video_url:
+          type: object
+          additionalProperties: false
+          required: [url]
+          properties:
+            url:
+              type: string
+    OpenRouterProviderConfig:
+      type: object
+      additionalProperties: true
+      properties:
+        options:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+    OpenRouterVideo:
+      type: object
+      required: [id, polling_url, status]
+      properties:
+        id:
+          type: string
+        polling_url:
+          type: string
+        status:
+          enum: [pending, in_progress, completed, failed, cancelled]
+        error:
+          type: [string, 'null']
+        generation_id:
+          type: string
+        unsigned_urls:
+          type: array
+          items:
+            type: string
+        usage:
+          $ref: '#/components/schemas/OpenRouterUsage'
+    OpenRouterUsage:
+      type: object
+      required: [cost, is_byok]
+      properties:
+        cost:
+          type: number
+        is_byok:
+          type: boolean
+    OpenRouterVideoModel:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        canonical_slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        supported_resolutions:
+          type: array
+          items:
+            type: string
+        supported_aspect_ratios:
+          type: array
+          items:
+            type: string
+        supported_sizes:
+          type: array
+          items:
+            type: string
+        pricing_skus:
+          type: object
+          additionalProperties:
+            type: string
+        allowed_passthrough_parameters:
+          type: array
+          items:
+            type: string
+    ErrorObject:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          $ref: '#/components/schemas/ErrorObject'
