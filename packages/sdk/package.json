@@ -6,25 +6,26 @@
   "license": "MIT",
   "sideEffects": false,
   "bin": {
-    "shortdrama-router": "./dist/src/cli.js"
+    "shortdrama-router": "./dist/bundle/cli.js"
   },
-  "files": ["dist/src", "README.md"],
+  "files": ["dist/bundle", "README.md"],
   "publishConfig": {
     "access": "public"
   },
   "exports": {
     ".": {
-      "types": "./dist/src/index.d.ts",
-      "import": "./dist/src/index.js"
+      "types": "./dist/bundle/types/index.d.ts",
+      "import": "./dist/bundle/index.js"
     }
   },
-  "dependencies": {
+  "devDependencies": {
     "@shortdrama-router/core": "0.1.0",
     "@shortdrama-router/http": "0.1.0",
     "@shortdrama-router/provider-xiaoyunque": "0.1.0"
   },
   "scripts": {
-    "build": "tsc -b --pretty false",
+    "build": "tsc -b --pretty false && node scripts/bundle-runtime.mjs && node scripts/bundle-types.mjs",
+    "prepack": "npm run build",
     "test": "node --import tsx --test test/*.test.ts"
   }
 }

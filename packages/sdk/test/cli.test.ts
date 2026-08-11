@@ -1,7 +1,11 @@
 import assert from "node:assert/strict"
+import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import test from "node:test"
+import { pathToFileURL } from "node:url"
 import { ShortDramaRouter, type ProviderAdapter } from "@shortdrama-router/core"
-import { runCli } from "../src/cli.js"
+import { isCliEntry, runCli } from "../src/cli.js"
 
 const provider: ProviderAdapter = {
   metadata: {
@@ -56,4 +60,19 @@ test("starts the local HTTP server from the CLI", async () => {
   assert.equal(code, 0)
   assert.deepEqual(received, { host: "127.0.0.1", port: 18080 })
   assert.match(output.join("\n"), /listening on http:\/\/127\.0\.0\.1:18080/u)
+})
+
+test("recognizes an npm bin symlink as the CLI entry", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "shortdrama-router-cli-"))
+  try {
+    const target = path.join(directory, "cli.js")
+    const link = path.join(directory, "shortdrama-router")
+    await writeFile(target, "")
+    await symlink(target, link)
+
+    assert.equal(isCliEntry(link, pathToFileURL(target).href), true)
+    assert.equal(isCliEntry(path.join(directory, "missing"), pathToFileURL(target).href), false)
+  } finally {
+    await rm(directory, { force: true, recursive: true })
+  }
 })

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
-import { pathToFileURL } from "node:url"
+import { realpathSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import type {
   ProviderDescriptor,
   ShortDramaRouter,
@@ -142,7 +143,16 @@ export async function runCli(args: readonly string[], options: CliOptions = {}) 
   return 0
 }
 
+export function isCliEntry(entry: string | undefined, moduleUrl = import.meta.url): boolean {
+  if (!entry) return false
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(moduleUrl))
+  } catch {
+    return false
+  }
+}
+
 const entry = process.argv[1]
-if (entry && pathToFileURL(entry).href === import.meta.url) {
+if (isCliEntry(entry)) {
   process.exitCode = await runCli(process.argv.slice(2))
 }
