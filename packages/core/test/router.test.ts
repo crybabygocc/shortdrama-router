@@ -125,9 +125,8 @@ test("routes audio creation and polling behind a router-owned job id", async () 
     now: () => new Date("2026-08-11T00:00:00.000Z"),
   })
   const created = await router.createAudio({
-    input: "shortdrama-router audio test",
     model: "test-provider/audio-1",
-    voice: "female",
+    prompt: "Three seconds of glass wind chimes",
   })
   assert.equal(created.id, "audio-job-1")
   assert.equal(created.status, "queued")

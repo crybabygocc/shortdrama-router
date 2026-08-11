@@ -267,38 +267,38 @@ export class XiaoYunqueProvider implements ProviderAdapter {
 
   async createAudio(request: AudioCreateRequest, signal?: AbortSignal): Promise<ProviderAudioJobResult> {
     const snapshot = await this.#credentials.read()
-    const selected = this.#credentialForMode(snapshot, "api_key")
+    const selected = this.#credentialForMode(snapshot, "browser_session")
     if (!selected || !selected.transport.createAudio) {
-      throw new XiaoYunqueAuthenticationError("XiaoYunque audio generation requires an Access Key")
+      throw new XiaoYunqueAuthenticationError("XiaoYunque Seed Audio generation requires a local browser session")
     }
     const model = resolveXiaoYunqueAudioModel(request.model)
     validateXiaoYunqueAudioRequest(model, request)
     try {
       const result = await selected.transport.createAudio(model, request, selected.credential, signal)
-      this.#observe("api_key", "valid")
+      this.#observe("browser_session", "valid")
       return result
     } catch (error) {
-      this.#observeFailure("api_key", error)
+      this.#observeFailure("browser_session", error)
       throw error
     }
   }
 
   async getAudio(reference: Readonly<Record<string, unknown>>, signal?: AbortSignal): Promise<ProviderAudioJobResult> {
-    if (reference.transport !== "api_key") throw new XiaoYunqueInputError("XiaoYunque audio job reference is invalid")
+    if (reference.transport !== "browser_session") throw new XiaoYunqueInputError("XiaoYunque audio job reference is invalid")
     const snapshot = await this.#credentials.read()
-    const selected = this.#credentialForMode(snapshot, "api_key")
+    const selected = this.#credentialForMode(snapshot, "browser_session")
     if (!selected || !selected.transport.getAudio) {
-      throw new XiaoYunqueAuthenticationError("the Access Key used by this XiaoYunque audio job is unavailable")
+      throw new XiaoYunqueAuthenticationError("the browser session used by this XiaoYunque audio job is unavailable")
     }
     if (reference.credential_fingerprint !== credentialFingerprint(selected.credential)) {
       throw new XiaoYunqueAuthenticationError("the credential used by this XiaoYunque audio job has changed")
     }
     try {
       const result = await selected.transport.getAudio(reference, selected.credential, signal)
-      this.#observe("api_key", "valid")
+      this.#observe("browser_session", "valid")
       return result
     } catch (error) {
-      this.#observeFailure("api_key", error)
+      this.#observeFailure("browser_session", error)
       throw error
     }
   }

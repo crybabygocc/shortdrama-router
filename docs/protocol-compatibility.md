@@ -4,7 +4,7 @@
 
 ## 结论
 
-现有协议可以直接复用，不需要为了积分或 provider 管理重新设计一套音频、图片或视频 API。
+现有图片与视频协议可以直接复用。通用音频生成应保留独立的异步任务资源，不能把音效或音乐模型伪装成文字转语音。
 
 推荐方案是：
 
@@ -12,13 +12,13 @@
 2. 提供 OpenAI Videos API 兼容入口，覆盖其已有标准能力；
 3. provider 的高级参数使用 OpenRouter 已定义的 `provider.options`；
 4. 费用只映射现有 `usage`，没有可靠来源时直接省略；
-5. 会员余额、积分预估和账号管理不进入核心视频协议。
+5. 会员余额、积分预估和账号管理不进入核心生成协议。
 
-## OpenAI Audio API
+## 音频协议边界
 
-独立语音直接复用 `POST /v1/audio/speech`：请求使用 `model`、`input`、`voice`、`instructions`、`response_format` 和 `speed`，成功后直接返回音频二进制。
+OpenAI `POST /v1/audio/speech` 是同步文字转语音接口，请求核心是 `input` 和 `voice`。只有具备稳定 TTS 语义的 provider 模型才适合复用它。
 
-当前公共层实现 MP3 与普通音频流响应。某个 provider 没有稳定的原生语音模型时，可以不声明音频能力；小云雀当前的 `xiaoyunque/nest-tts` 是由 Nest Agent 编排的实验性语音能力，不把它描述成官方同名模型。视频任务中的音频参考仍使用 `input_references`，与独立语音生成分开表达。
+小云雀 `xiaoyunque/seed-audio-1.0` 同时生成语音、音效和音乐设计，使用提示词控制内容与大致秒数，并可接受音频或图片参考。公共层使用 `POST /api/v1/audio` 创建任务、`GET /api/v1/audio/{id}` 查询结果，不暴露为 `/v1/audio/speech`。视频任务中的音频参考仍使用视频请求的 `input_references`，与独立音频生成分开表达。
 
 ## OpenAI Images API
 
@@ -78,7 +78,7 @@ OpenRouter Video API 已经是面向多模型和多 provider 的异步视频协�
 “兼容”应按接口逐项声明：
 
 - `openai-videos-core`：创建、查询、下载；
-- `openai-audio-speech`：同步文字转语音并返回音频；
+- `router-audio-async`：通用音频生成的创建与查询；
 - `openai-images-generation`：同步文生图并返回 URL；
 - `router-images-async`：异步生图创建与查询；
 - `openai-videos-edit`：编辑；

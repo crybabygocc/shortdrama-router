@@ -142,30 +142,13 @@ export class ShortDramaRouter {
     if (!providerId) throw invalidRequest("provider is required when model has no provider prefix")
     requireIdentifier(providerId, "provider")
     if (modelProvider && modelProvider !== providerId) throw invalidRequest("provider does not match the model prefix")
-    const input = request.input.trim()
-    if (input.length === 0 || input.length > 4_096) {
-      throw invalidRequest("input must contain 1 to 4096 characters")
-    }
-    const voice = request.voice.trim()
-    if (voice.length === 0 || voice.length > 128) {
-      throw invalidRequest("voice must contain 1 to 128 characters")
-    }
-    const instructions = request.instructions?.trim()
-    if (instructions !== undefined && (instructions.length === 0 || Buffer.byteLength(instructions, "utf8") > 20_000)) {
-      throw invalidRequest("instructions must contain 1 to 20,000 UTF-8 bytes")
-    }
-    if (request.speed !== undefined && (!Number.isFinite(request.speed) || request.speed < 0.25 || request.speed > 4)) {
-      throw invalidRequest("speed must be from 0.25 to 4")
-    }
     const provider = this.provider(providerId)
     if (!provider.createAudio) {
       throw conflict(`provider ${providerId} does not support audio generation`, "audio_generation_unsupported")
     }
     const result = await provider.createAudio({
       ...request,
-      input,
-      voice,
-      ...(instructions === undefined ? {} : { instructions }),
+      prompt: requirePrompt(request.prompt),
       provider: providerId,
     }, signal)
     const timestamp = this.#now().toISOString()

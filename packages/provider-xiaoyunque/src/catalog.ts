@@ -18,17 +18,23 @@ export interface XiaoYunqueVideoModelDefinition extends ProviderModel {
 
 export interface XiaoYunqueAudioModelDefinition extends ProviderModel {
   readonly kind: "audio"
-  readonly upstream_agent: string
+  readonly upstream_model: string
 }
 
 export const XIAOYUNQUE_AUDIO_MODELS: readonly XiaoYunqueAudioModelDefinition[] = [{
-  capabilities: { audio_formats: ["mp3"] },
-  description: "Experimental speech synthesis orchestrated by XiaoYunque Nest Agent. Voice availability and synthesis tools may vary.",
-  id: "xiaoyunque/nest-tts",
+  capabilities: {
+    audio_formats: ["mp3", "wav", "pcm", "ogg_opus"],
+    audio_reference: true,
+    authorization: ["browser_session"],
+    reference_image: true,
+    sample_rates: [8_000, 16_000, 24_000, 32_000, 44_100, 48_000],
+  },
+  description: "Seed Audio 1.0 sound generation for voice, sound effects and music design, with audio or image references.",
+  id: "xiaoyunque/seed-audio-1.0",
   kind: "audio",
-  name: "Nest Agent Speech",
+  name: "Seed Audio 1.0",
   provider: "xiaoyunque",
-  upstream_agent: "pippit_nest_agent",
+  upstream_model: "seedaudio_1.0",
 }]
 
 const imageAspectRatios = ["auto", "16:9", "21:9", "9:16", "4:3", "3:4", "1:1"] as const
@@ -148,10 +154,18 @@ export function validateXiaoYunqueAudioRequest(
   model: XiaoYunqueAudioModelDefinition,
   request: AudioCreateRequest,
 ) {
-  const format = request.response_format ?? "mp3"
+  const format = request.format ?? "mp3"
   if (!model.capabilities.audio_formats?.includes(format)) {
     throw new XiaoYunqueInputError(`${model.id} does not support audio format ${format}`)
   }
+  const references = request.input_references ?? []
+  const audioCount = references.filter(reference => reference.type === "audio").length
+  const imageCount = references.filter(reference => reference.type === "image").length
+  if (audioCount > 0 && imageCount > 0) {
+    throw new XiaoYunqueInputError("Seed Audio references cannot mix audio and images")
+  }
+  if (audioCount > 3) throw new XiaoYunqueInputError("Seed Audio accepts at most three audio references")
+  if (imageCount > 1) throw new XiaoYunqueInputError("Seed Audio accepts at most one image reference")
 }
 
 export function resolveXiaoYunqueVideoModel(modelId: string) {
@@ -203,7 +217,7 @@ export function publicXiaoYunqueModel(
   model: XiaoYunqueAudioModelDefinition | XiaoYunqueImageModelDefinition | XiaoYunqueVideoModelDefinition,
 ): ProviderModel {
   if (model.kind === "audio") {
-    const { upstream_agent: _upstreamAgent, ...result } = model
+    const { upstream_model: _upstreamModel, ...result } = model
     return structuredClone(result)
   }
   const { upstream_model: _upstreamModel, ...result } = model

@@ -38,13 +38,16 @@ export interface ProviderDescriptor extends ProviderMetadata {
 
 export interface ProviderModelCapabilities {
   readonly audio_formats?: readonly string[]
+  readonly audio_reference?: boolean
   readonly aspect_ratios?: readonly string[]
   readonly audio_input?: boolean
+  readonly authorization?: readonly AuthorizationMethod[]
   readonly durations?: readonly number[] | null
   readonly first_frame?: boolean
   readonly last_frame?: boolean
   readonly reference_image?: boolean
   readonly resolutions?: readonly string[]
+  readonly sample_rates?: readonly number[]
   readonly seed?: boolean
   readonly video_input?: boolean
 }
@@ -99,14 +102,17 @@ export interface ImageCreateRequest {
 }
 
 export interface AudioCreateRequest {
-  readonly input: string
-  readonly instructions?: string
+  readonly format?: string
+  readonly input_references?: readonly AudioInputReference[]
   readonly model: string
+  readonly prompt: string
   readonly provider?: string
   readonly provider_options?: Readonly<Record<string, unknown>>
-  readonly response_format?: "mp3"
-  readonly speed?: number
-  readonly voice: string
+}
+
+export interface AudioInputReference {
+  readonly provider_asset: ProviderAssetReference
+  readonly type: "audio" | "image"
 }
 
 export type GenerationJobStatus =

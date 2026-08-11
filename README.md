@@ -6,7 +6,7 @@
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：`0.1.0` / pre-alpha。已提供 provider 对齐层、小云雀生图、生视频和实验性独立语音能力、可直接启动的本地 HTTP 服务和可发布的 npm 聚合包；其他 provider 仍在规划中。
+> 当前状态：`0.1.0` / pre-alpha。已提供 provider 对齐层、小云雀 Seed Audio、生图和生视频能力、可直接启动的本地 HTTP 服务和可发布的 npm 聚合包；其他 provider 仍在规划中。
 
 ## 为什么使用 shortdrama-router
 
@@ -22,9 +22,11 @@
 
 ### OpenRouter 风格：主协议
 
-OpenRouter 的视频接口更适合多模型路由，已经定义了：
+OpenRouter 的视频接口更适合多模型路由。项目沿用它的多 provider 路由与异步任务思路，并提供以下主协议入口：
 
-- `POST /api/v1/videos` 提交异步任务；
+- `POST /api/v1/audio` 提交项目定义的异步音频任务；
+- `GET /api/v1/audio/{id}` 查询音频状态和结果；
+- `POST /api/v1/videos` 按 OpenRouter 风格提交异步视频任务；
 - `GET /api/v1/videos/{id}` 查询状态；
 - `GET /api/v1/videos/{id}/content` 下载结果；
 - `GET /api/v1/providers` 查询已支持服务及其授权状态；
@@ -35,16 +37,15 @@ OpenRouter 的视频接口更适合多模型路由，已经定义了：
 
 ### OpenAI 风格：兼容协议
 
-同时提供 OpenAI Audio / Images / Videos API 兼容入口：
+同时提供 OpenAI Images / Videos API 兼容入口：
 
-- `POST /v1/audio/speech`：同步等待并返回 MP3 音频；
 - `POST /v1/images/generations`：同步等待并返回图片 URL；
 - `POST /v1/videos`；
 - `GET /v1/videos/{id}`；
 - `GET /v1/videos/{id}/content`；
 - 逐步兼容 edit、extend 和 remix 等标准视频操作。
 
-这样现有 OpenAI 客户端可以通过修改 `base_url` 和 `model` 尽量直接复用。OpenAI 当前没有表达的多参考图、首尾帧、原生音频和 provider 参数，使用 OpenRouter 风格接口，不强塞进 OpenAI 对象。
+这样现有 OpenAI 客户端可以通过修改 `base_url` 和 `model` 尽量直接复用。Seed Audio 同时覆盖语音、音效和音乐设计，不等同于文字转语音，因此使用异步音频任务接口；OpenAI 当前没有表达的多参考图、首尾帧、通用音频生成和 provider 参数，使用 OpenRouter 风格接口，不强塞进 OpenAI 对象。
 
 详细判断见 [协议兼容性](docs/protocol-compatibility.md)，接口草案见 [OpenAPI](openapi/openapi.yaml)。
 
@@ -90,22 +91,20 @@ npx shortdrama-router serve --host 127.0.0.1 --port 8080
 
 ## 调用示例
 
-OpenAI 风格语音生成：
+Seed Audio 异步生成：
 
 ```bash
-curl http://localhost:8080/v1/audio/speech \
+curl http://localhost:8080/api/v1/audio \
   -H "Authorization: Bearer $SHORTDRAMA_ROUTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "xiaoyunque/nest-tts",
-    "input": "这一集的故事，从一封神秘来信开始。",
-    "voice": "清晰自然的中文女声",
-    "response_format": "mp3"
-  }' \
-  --output speech.mp3
+    "model": "xiaoyunque/seed-audio-1.0",
+    "prompt": "3秒，清脆的玻璃风铃在安静房间里响三下，无人声，无背景音乐。",
+    "format": "mp3"
+  }'
 ```
 
-`xiaoyunque/nest-tts` 是由小云雀 Nest Agent 编排的实验性语音能力，不代表小云雀提供了同名原生音频模型；实际可用音色、合成工具和耗时可能随上游环境变化。
+创建成功后，通过 `GET /api/v1/audio/{id}` 查询任务。小云雀 Seed Audio 目前是漫剧画布能力，要求用户在本机授权 `browser_session`；Access Key 仍优先用于其已支持的生图和生视频 API。
 
 OpenAI 风格生图：
 
@@ -175,7 +174,7 @@ curl http://localhost:8080/api/v1/videos \
 
 当前与首批目标包括：
 
-- `xiaoyunque/*`：已实现用户主动登录后自动创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频及音频参考、实验性 Nest Agent 独立语音、本地 Web 会话 fallback、模型发现、授权状态、任务提交和轮询；
+- `xiaoyunque/*`：已实现用户主动登录后创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频及音频参考、Seed Audio 语音/音效/音乐生成、本地 Web 会话授权、模型发现、授权状态、任务提交和轮询；
 - `libtv/*`：计划支持会话式视频创作、编辑和复杂 Agent 工作流；
 - `jimeng/*`：即梦图像、视频和编辑能力；
 - `kling/*`：可灵文生视频、图生视频、参考生成和视频编辑能力。

@@ -107,53 +107,46 @@ test("maps image generation to the official Nest Agent and returns image outputs
   assert.equal(completed.outputs?.[0]?.url, "http://127.0.0.1:8787/generated.png")
 })
 
-test("maps experimental speech generation to a Nest Agent audio artifact", async () => {
+test("maps Seed Audio generation to the dedicated canvas Agent contract", async () => {
   let submitted: Record<string, unknown> | undefined
   const provider = new XiaoYunqueProvider({
-    accessKey: "ak-audio-test",
     baseUrl: "http://127.0.0.1:8787",
+    credentials: new MemoryXiaoYunqueCredentials({
+      web_session: {
+        authorized_at: "2026-08-11T00:00:00.000Z",
+        cookies: [{ name: "sessionid_pippitcn_web", value: "audio-session" }],
+      },
+    }),
     fetch: async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : input.toString())
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>
-      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer ak-audio-test")
-      if (url.pathname.endsWith("/skill/submit_run")) {
+      assert.equal(new Headers(init?.headers).get("authorization"), null)
+      assert.equal(new Headers(init?.headers).get("cookie"), "sessionid_pippitcn_web=audio-session")
+      if (url.pathname.endsWith("/agent/submit_run")) {
         submitted = body
         return response({ ret: 0, data: { run: { run_id: "audio-run-1", thread_id: "audio-thread-1", state: 1 } } })
       }
-      if (url.pathname.endsWith("/skill/get_thread")) {
+      if (url.pathname.endsWith("/agent/get_run")) {
         return response({
           ret: 0,
           data: {
-            thread: {
-              run_list: [{
-                entry_list: [{
-                  artifact: {
-                    content: [{
-                      data: JSON.stringify({
-                        file_path: "/workspace/assets/speech.mp3",
+            run: {
+              entry_list: [{
+                artifact: {
+                  content: [{
+                    data: JSON.stringify({
+                      audio: {
+                        download_url: "http://127.0.0.1:8787/seed-audio.mp3",
                         mime: "audio/mpeg",
-                        type: "audio",
-                      }),
-                      sub_type: "biz/x_data_sandbox_file",
-                    }],
-                  },
-                }],
-                run_id: "audio-run-1",
-                state: 3,
+                      },
+                    }),
+                    sub_type: "biz/x_data_audio",
+                  }],
+                },
               }],
+              run_id: "audio-run-1",
+              state: 3,
             },
-          },
-        })
-      }
-      if (url.pathname.endsWith("/skill/list_thread_file")) {
-        assert.deepEqual(body, { page_num: 1, page_size: 200, thread_id: "audio-thread-1" })
-        return response({
-          ret: 0,
-          data: {
-            files: [{
-              download_url: "http://127.0.0.1:8787/speech.mp3",
-              file_path: "/workspace/assets/speech.mp3",
-            }],
           },
         })
       }
@@ -162,21 +155,47 @@ test("maps experimental speech generation to a Nest Agent audio artifact", async
   })
 
   const created = await provider.createAudio({
-    input: "音频接口测试成功。",
-    model: "xiaoyunque/nest-tts",
-    speed: 1.1,
-    voice: "清晰自然的中文女声",
+    input_references: [{ provider_asset: { pippit_asset_id: "audio-reference-1" }, type: "audio" }],
+    model: "xiaoyunque/seed-audio-1.0",
+    prompt: "三秒清脆的玻璃风铃声",
+    provider_options: { pitch_rate: 1, sample_rate: 44_100 },
   })
   assert.equal(created.status, "queued")
-  assert.equal(submitted?.agent_name, "pippit_nest_agent")
-  assert.match(String(submitted?.message), /音频接口测试成功/u)
+  assert.equal(created.reference.transport, "browser_session")
+  assert.equal(submitted?.agent_name, "pippit_novel_agent_cn_v2")
+  const message = submitted?.message as Record<string, unknown>
+  const part = (message.content as Record<string, unknown>[])[0]!
+  assert.equal(part.sub_type, "biz/x_data_novel_raw_audio_gen")
+  const audio = JSON.parse(String(part.data)) as Record<string, unknown>
+  assert.equal(audio.model, "seedaudio_1.0")
+  assert.match(String(audio.prompt), /^@音频1 /u)
+  assert.deepEqual(audio.references, [{ pippit_asset_id: "audio-reference-1", type: "audio" }])
+  assert.deepEqual(audio.audio_config, {
+    format: "mp3",
+    loudness_rate: 0,
+    pitch_rate: 1,
+    sample_rate: 44_100,
+    speech_rate: 0,
+  })
   const completed = await provider.getAudio(created.reference)
   assert.equal(completed.status, "completed")
-  assert.deepEqual(completed.outputs, [{ content_type: "audio/mpeg", url: "http://127.0.0.1:8787/speech.mp3" }])
+  assert.deepEqual(completed.outputs, [{ content_type: "audio/mpeg", url: "http://127.0.0.1:8787/seed-audio.mp3" }])
 
-  const model = (await provider.listModels()).find(item => item.id === "xiaoyunque/nest-tts")
+  const model = (await provider.listModels()).find(item => item.id === "xiaoyunque/seed-audio-1.0")
   assert.equal(model?.kind, "audio")
-  assert.equal("upstream_agent" in (model ?? {}), false)
+  assert.deepEqual(model?.capabilities.authorization, ["browser_session"])
+  assert.equal("upstream_model" in (model ?? {}), false)
+})
+
+test("does not route Seed Audio through an Access Key-only transport", async () => {
+  const provider = new XiaoYunqueProvider({ accessKey: "ak-audio-only" })
+  await assert.rejects(
+    provider.createAudio({
+      model: "xiaoyunque/seed-audio-1.0",
+      prompt: "三秒风铃声",
+    }),
+    /requires a local browser session/,
+  )
 })
 
 test("rejects Mini Lite resolutions that XiaoYunque silently coerces", async () => {

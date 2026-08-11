@@ -115,30 +115,19 @@ test("waits for an image and returns the OpenAI Images response shape", async ()
   })
 })
 
-test("waits for speech and returns the OpenAI audio response body", async () => {
-  const router = new ShortDramaRouter({ providers: [provider], randomId: () => "audio-job-openai" })
-  const expected = new TextEncoder().encode("fake-mp3")
-  const handle = createRouterHttpHandler(router, {
-    audioPollIntervalMs: 0,
-    loadAudio: async url => {
-      assert.equal(url, "https://media.example/speech.mp3")
-      return { body: expected.buffer, contentType: "audio/mpeg" }
-    },
-    sleep: async () => undefined,
-  })
-  const response = await handle(new Request("http://router.local/v1/audio/speech", {
+test("creates and polls an asynchronous audio job", async () => {
+  const router = new ShortDramaRouter({ providers: [provider], randomId: () => "audio-job-1" })
+  const handle = createRouterHttpHandler(router)
+  const response = await handle(new Request("http://router.local/api/v1/audio", {
     body: JSON.stringify({
-      input: "音频接口测试成功。",
       model: "test-provider/audio-1",
-      response_format: "mp3",
-      speed: 1,
-      stream_format: "audio",
-      voice: "female",
+      prompt: "三秒清脆的玻璃风铃声",
     }),
     headers: { "Content-Type": "application/json" },
     method: "POST",
   }))
-  assert.equal(response.status, 200)
-  assert.equal(response.headers.get("content-type"), "audio/mpeg")
-  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), expected)
+  assert.equal(response.status, 202)
+  assert.equal((await response.json() as { id: string }).id, "audio-job-1")
+  const completed = await handle(new Request("http://router.local/api/v1/audio/audio-job-1"))
+  assert.equal((await completed.json() as { status: string }).status, "completed")
 })

@@ -23,7 +23,7 @@ tags:
   - name: Providers
     description: Provider discovery, models and authorization.
   - name: Audio
-    description: Synchronous speech generation.
+    description: Asynchronous general audio generation.
   - name: Images
     description: Synchronous and asynchronous image generation.
   - name: Videos
@@ -185,37 +185,45 @@ paths:
           description: Authorization cleared
         '409':
           $ref: '#/components/responses/Error'
-  /v1/audio/speech:
+  /api/v1/audio:
     post:
       tags: [Audio]
-      operationId: generateOpenAISpeech
-      summary: Generate speech using the OpenAI Audio response shape
-      description: Waits for the provider job and returns MP3 audio bytes.
+      operationId: createAudioJob
+      summary: Create an asynchronous general audio job
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/OpenAIAudioSpeechRequest'
+              $ref: '#/components/schemas/AudioCreateRequest'
       responses:
-        '200':
-          description: Generated MP3 audio
-          headers:
-            Cache-Control:
-              schema:
-                const: no-store
+        '202':
+          description: Audio job accepted
           content:
-            audio/mpeg:
+            application/json:
               schema:
-                type: string
-                format: binary
+                $ref: '#/components/schemas/AudioJob'
         '400':
           $ref: '#/components/responses/Error'
         '401':
           $ref: '#/components/responses/Error'
-        '502':
+        '409':
           $ref: '#/components/responses/Error'
-        '504':
+  /api/v1/audio/{audio_id}:
+    get:
+      tags: [Audio]
+      operationId: getAudioJob
+      summary: Get an asynchronous audio job
+      parameters:
+        - $ref: '#/components/parameters/AudioId'
+      responses:
+        '200':
+          description: Audio job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioJob'
+        '404':
           $ref: '#/components/responses/Error'
   /v1/images/generations:
     post:
@@ -382,6 +390,12 @@ components:
       schema:
         type: string
         pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
+    AudioId:
+      name: audio_id
+      in: path
+      required: true
+      schema:
+        type: string
     ImageId:
       name: image_id
       in: path
@@ -525,43 +539,40 @@ components:
           type: string
         asset_id:
           type: string
-    OpenAIAudioSpeechRequest:
+    AudioCreateRequest:
       type: object
       additionalProperties: false
-      required: [input, model, voice]
+      required: [model, prompt]
       properties:
-        input:
-          type: string
-          minLength: 1
-          maxLength: 4096
         model:
           type: string
-          examples: [xiaoyunque/nest-tts]
-        voice:
+          examples: [xiaoyunque/seed-audio-1.0]
+        prompt:
           type: string
           minLength: 1
-          maxLength: 128
-          examples: [清晰自然的中文女声]
-        instructions:
+        format:
           type: string
-          minLength: 1
-          maxLength: 20000
-        response_format:
-          const: mp3
-          default: mp3
-        speed:
-          type: number
-          minimum: 0.25
-          maximum: 4
-          default: 1
-        stream_format:
-          const: audio
-          default: audio
+          examples: [mp3]
+        input_references:
+          type: array
+          items:
+            $ref: '#/components/schemas/AudioInputReference'
         provider:
           type: string
         provider_options:
           type: object
           additionalProperties: true
+    AudioInputReference:
+      type: object
+      additionalProperties: false
+      required: [provider_asset, type]
+      properties:
+        type:
+          enum: [audio, image]
+        provider_asset:
+          $ref: '#/components/schemas/ProviderAssetReference'
+    AudioJob:
+      $ref: '#/components/schemas/GenerationJob'
     ImageCreateRequest:
       type: object
       required: [model, prompt]

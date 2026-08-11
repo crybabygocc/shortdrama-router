@@ -10,4 +10,6 @@ Starting authorization again replaces the previous pending request, so a user ca
 
 Use `browser_session` only when a caller explicitly needs Web-only capabilities. In that mode the injected credential source must implement `setWebSession` and is responsible for secure local storage.
 
-Image generation uses the official Access Key API and XiaoYunque Nest Agent. It supports text-to-image, provider asset references, aspect ratio, output count, and the documented Seedream/Nova model catalog. Video generation supports text-to-video and references that already have XiaoYunque/Pippit provider asset identities. Provider-scoped model discovery and authorization inspection are available without a global model catalog.
+Image generation uses the official Access Key API and XiaoYunque Nest Agent. It supports text-to-image, provider asset references, aspect ratio, output count, and the documented Seedream/Nova model catalog. Video generation supports text-to-video and references that already have XiaoYunque/Pippit provider asset identities.
+
+`xiaoyunque/seed-audio-1.0` maps to the dedicated Seed Audio canvas workflow for voice, sound effects, and music design. Because this workflow is not exposed through the XiaoYunque Access Key surface, it requires a user-authorized local `browser_session`; the model advertises that requirement in its capabilities. Audio jobs are asynchronous and can use up to three audio references or one image reference. Provider-scoped model discovery and authorization inspection are available without a global model catalog.
