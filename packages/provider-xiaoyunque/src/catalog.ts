@@ -85,7 +85,7 @@ export const XIAOYUNQUE_VIDEO_MODELS: readonly XiaoYunqueVideoModelDefinition[] 
     upstream_model: "Seedance_2.0_mini",
   },
   {
-    capabilities: { ...commonVideoCapabilities, resolutions: ["480p", "720p"] },
+    capabilities: { ...commonVideoCapabilities, resolutions: ["720p"] },
     description: "Seedance 2.0 Mini Lite on the non-VIP channel.",
     id: "xiaoyunque/seedance-2.0-mini-lite",
     kind: "video",

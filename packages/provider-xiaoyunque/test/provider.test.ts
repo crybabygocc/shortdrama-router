@@ -104,12 +104,49 @@ test("maps image generation to the official Nest Agent and returns image outputs
   assert.equal(completed.outputs?.[0]?.url, "http://127.0.0.1:8787/generated.png")
 })
 
+test("rejects Mini Lite resolutions that XiaoYunque silently coerces", async () => {
+  const provider = new XiaoYunqueProvider({ accessKey: "ak-test", baseUrl: "http://127.0.0.1:8787" })
+  await assert.rejects(
+    provider.createVideo({
+      model: "xiaoyunque/seedance-2.0-mini-lite",
+      prompt: "A short scene",
+      resolution: "480p",
+    }),
+    /does not support resolution 480p/,
+  )
+})
+
 test("reports an invalid Access Key as expired after a live probe", async () => {
   const provider = new XiaoYunqueProvider({
     accessKey: "ak-expired",
     baseUrl: "http://127.0.0.1:8787",
     fetch: async () => response({ ret: 1015, data: {} }, 401),
     now: () => new Date("2026-08-05T00:00:00.000Z"),
+  })
+  const result = await provider.getAuthorizationStatus({ probe: true })
+  assert.equal(result.state, "expired")
+  assert.equal(result.authorized, false)
+})
+
+test("accepts XiaoYunque's missing probe thread response as proof of a valid Access Key", async () => {
+  const provider = new XiaoYunqueProvider({
+    accessKey: "ak-valid",
+    baseUrl: "http://127.0.0.1:8787",
+    fetch: async (_input, init) => {
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer ak-valid")
+      return response({ ret: "5", errmsg: "thread not found" })
+    },
+  })
+  const result = await provider.getAuthorizationStatus({ probe: true })
+  assert.equal(result.state, "valid")
+  assert.equal(result.authorized, true)
+})
+
+test("treats XiaoYunque's missing Access Key record response as expired", async () => {
+  const provider = new XiaoYunqueProvider({
+    accessKey: "ak-invalid",
+    baseUrl: "http://127.0.0.1:8787",
+    fetch: async () => response({ ret: "2", errmsg: "Access Key not found" }),
   })
   const result = await provider.getAuthorizationStatus({ probe: true })
   assert.equal(result.state, "expired")

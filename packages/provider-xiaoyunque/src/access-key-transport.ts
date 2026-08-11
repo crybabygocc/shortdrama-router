@@ -99,7 +99,7 @@ export class XiaoYunqueAccessKeyTransport implements XiaoYunqueTransport {
       body: JSON.stringify({ limit: 1, run_id: id, scopes: ["run_list.entry_list"], thread_id: id }),
       headers: headers(credential),
       method: "POST",
-    }, signal)
+    }, signal, [5])
   }
 
   async createImage(

@@ -58,6 +58,7 @@ export async function requestEnvelope(
   url: URL,
   init: RequestInit,
   signal?: AbortSignal,
+  acceptedBusinessCodes: readonly (number | string)[] = [],
 ) {
   const response = await fetchLike(url, {
     ...init,
@@ -68,16 +69,17 @@ export async function requestEnvelope(
   const envelope = record(value)
   if (!envelope) throw new XiaoYunqueUpstreamError("XiaoYunque returned an invalid response")
   const ret = envelope.ret
-  if (response.status === 401 || response.status === 403 || Number(ret) === 1015) {
+  if (response.status === 401 || response.status === 403 || Number(ret) === 2 || Number(ret) === 1015) {
     throw new XiaoYunqueAuthenticationError("XiaoYunque authorization is no longer valid")
   }
   if (!response.ok) throw new XiaoYunqueUpstreamError("XiaoYunque request failed")
-  if (ret !== 0 && ret !== "0") {
+  const acceptedBusinessCode = acceptedBusinessCodes.some(code => String(code) === String(ret))
+  if (ret !== 0 && ret !== "0" && !acceptedBusinessCode) {
     throw new XiaoYunqueUpstreamError("XiaoYunque rejected the request", typeof ret === "string" || typeof ret === "number" ? ret : undefined)
   }
   const data = record(envelope.data)
-  if (!data) throw new XiaoYunqueUpstreamError("XiaoYunque returned an invalid response")
-  return data
+  if (!data && !acceptedBusinessCode) throw new XiaoYunqueUpstreamError("XiaoYunque returned an invalid response")
+  return data ?? {}
 }
 
 export function requireString(value: unknown, label: string, maximum = 8_192) {
