@@ -1,0 +1,22 @@
+{
+  "name": "@shortdrama-router/core",
+  "version": "0.1.0",
+  "description": "Provider-neutral contracts and routing for shortdrama-router",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": ["dist/src"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}

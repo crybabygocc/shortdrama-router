@@ -1,12 +1,12 @@
 # shortdrama-router
 
-**把 libtv、小云雀、即梦、可灵等漫剧与视频创作平台，路由成 OpenRouter / OpenAI 风格的视频生成 API。**
+**把 libtv、小云雀、即梦、可灵等漫剧与视频创作平台，路由成 OpenRouter / OpenAI 风格的图片与视频生成 API。**
 
 `shortdrama-router` 是一个面向漫剧、AI 短剧和视频工作流的开源 API 路由器。业务只需要接入一套熟悉的视频任务协议，就可以按 `provider/model` 选择不同创作平台；平台账号、模型能力和实际生成仍由用户分别授权的 provider 提供。
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：协议设计 / pre-alpha。仓库定义的是兼容目标，不代表所有 provider adapter 已经可用于生产环境。
+> 当前状态：`0.1.0` / pre-alpha。已提供 provider 对齐层、小云雀生图/生视频 adapter、可直接启动的本地 HTTP 服务和可发布的 npm 聚合包；其他 provider 仍在规划中。
 
 ## 为什么使用 shortdrama-router
 
@@ -27,15 +27,17 @@ OpenRouter 的视频接口更适合多模型路由，已经定义了：
 - `POST /api/v1/videos` 提交异步任务；
 - `GET /api/v1/videos/{id}` 查询状态；
 - `GET /api/v1/videos/{id}/content` 下载结果；
-- `GET /api/v1/videos/models` 查询视频模型、能力与可透传参数；
+- `GET /api/v1/providers` 查询已支持服务及其授权状态；
+- `GET /api/v1/providers/{provider}/models` 单独查询某个服务的模型和能力；
 - `duration`、`resolution`、`aspect_ratio`、`frame_images`、`input_references`、`generate_audio`；
 - `provider.options` 传递 provider 特有参数；
 - provider 能提供费用时，在完成结果中返回 `usage`。
 
 ### OpenAI 风格：兼容协议
 
-同时提供 OpenAI Videos API 兼容入口：
+同时提供 OpenAI Images / Videos API 兼容入口：
 
+- `POST /v1/images/generations`：同步等待并返回图片 URL；
 - `POST /v1/videos`；
 - `GET /v1/videos/{id}`；
 - `GET /v1/videos/{id}/content`；
@@ -45,14 +47,70 @@ OpenRouter 的视频接口更适合多模型路由，已经定义了：
 
 详细判断见 [协议兼容性](docs/protocol-compatibility.md)，接口草案见 [OpenAPI](openapi/openapi.yaml)。
 
+## npm 使用
+
+`packages/sdk` 提供名为 `shortdrama-router` 的聚合 npm 包，一次导出 router、HTTP handler 和全部内置 provider：
+
+```bash
+npx shortdrama-router providers
+npx shortdrama-router providers --probe
+```
+
+该命令列出当前支持的服务及其授权状态；`--probe` 会实时验证已经配置的凭证，`--json` 可供其他程序读取。
+
+```ts
+import {
+  createRouterHttpHandler,
+  createShortDramaRouter,
+} from "shortdrama-router"
+
+const router = createShortDramaRouter({
+  xiaoyunque: {
+    accessKey: process.env.XIAOYUNQUE_ACCESS_KEY,
+  },
+})
+
+const providers = await router.listProviders({ probeAuthorization: true })
+const models = await router.listProviderModels("xiaoyunque")
+const handle = createRouterHttpHandler(router)
+```
+
+即使尚未授权，内置 provider 也会出现在服务列表中，因此业务可以分别展示“支持但未授权”“授权有效”“授权失效”等状态。
+
+直接启动本地 HTTP API：
+
+```bash
+export XYQ_ACCESS_KEY="<your-xiaoyunque-access-key>"
+export SHORTDRAMA_ROUTER_KEY="<your-local-router-key>"
+npx shortdrama-router serve --host 127.0.0.1 --port 8080
+```
+
+默认只监听 `127.0.0.1:8080`。绑定到非回环地址时必须配置 `SHORTDRAMA_ROUTER_KEY`。
+
 ## 调用示例
+
+OpenAI 风格生图：
+
+```bash
+curl http://localhost:8080/v1/images/generations \
+  -H "Authorization: Bearer $SHORTDRAMA_ROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "xiaoyunque/seedream-4.5",
+    "prompt": "雨后的上海街道，电影感漫剧分镜",
+    "size": "1024x1024",
+    "n": 1
+  }'
+```
+
+异步生图可使用 `POST /api/v1/images`，再通过 `GET /api/v1/images/{id}` 查询任务。
 
 OpenAI 风格：
 
 ```bash
 curl http://localhost:8080/v1/videos \
   -H "Authorization: Bearer $SHORTDRAMA_ROUTER_KEY" \
-  -F "model=kling/kling-video" \
+  -F "model=xiaoyunque/seedance-2.5" \
   -F "prompt=雨后的上海街道，电影感缓慢推镜"
 ```
 
@@ -63,16 +121,27 @@ curl http://localhost:8080/api/v1/videos \
   -H "Authorization: Bearer $SHORTDRAMA_ROUTER_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "jimeng/jimeng-video",
+    "model": "xiaoyunque/seedance-2.5",
     "prompt": "水墨风漫剧分镜，人物回头，镜头缓慢推进",
     "duration": 5,
-    "resolution": "1080p",
-    "aspect_ratio": "9:16",
-    "generate_audio": true
+    "resolution": "720p",
+    "aspect_ratio": "9:16"
   }'
 ```
 
-模型名仅为协议示例，实际名称和支持参数以 `/api/v1/videos/models` 返回为准。
+实际模型和支持参数按服务查询，例如 `/api/v1/providers/xiaoyunque/models`。项目不提供把所有三方模型混在一起的全局 `/models` 列表。
+
+## 服务与授权状态
+
+- `GET /api/v1/providers`：查询所有已安装 provider；
+- `GET /api/v1/providers?probe=true`：同时实时验证可验证的授权；
+- `GET /api/v1/providers/{provider}/authorization`：查询单个服务授权状态；
+- `POST /api/v1/providers/{provider}/authorization`：开始该服务支持的交互式授权；
+- `PUT /api/v1/providers/{provider}/authorization`：在本机完成授权；
+- `DELETE /api/v1/providers/{provider}/authorization`：清除本地授权；
+- `GET /api/v1/providers/{provider}/models`：只查询该服务的模型。
+
+授权状态包括 `not_configured`、`configured`、`valid`、`expiring`、`expired` 和 `error`。无法可靠验证时保持 `configured`，不会猜测为有效。
 
 ## 费用与会员额度
 
@@ -86,10 +155,10 @@ curl http://localhost:8080/api/v1/videos \
 
 ## Provider 原则
 
-首批目标包括：
+当前与首批目标包括：
 
-- `libtv/*`：会话式视频创作、编辑和复杂 Agent 工作流；
-- `xiaoyunque/*`：面向漫剧和短视频的创作工作流；
+- `xiaoyunque/*`：已实现用户主动登录后自动创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频、本地 Web 会话 fallback、模型发现、授权状态、任务提交和轮询；
+- `libtv/*`：计划支持会话式视频创作、编辑和复杂 Agent 工作流；
 - `jimeng/*`：即梦图像、视频和编辑能力；
 - `kling/*`：可灵文生视频、图生视频、参考生成和视频编辑能力。
 
@@ -99,9 +168,13 @@ curl http://localhost:8080/api/v1/videos \
 
 官方 API Key、OAuth 或 access key 是首选授权方式。
 
+小云雀默认使用主动授权：调用方打开 adapter 返回的官方登录页，用户亲自完成登录后，本地授权宿主自动完成连接。adapter 会通过小云雀官方网页能力创建 Access Key，用户不需要自行查找、复制或粘贴 AK；登录会话只作为本次授权的临时材料，不保存为长期凭证。默认 Access Key 有效期为 30 天，可在 adapter 配置中选择官网支持的 7、30、90 或 365 天。
+
 当官方 API 暂未覆盖 Web 端已有能力时，provider adapter 可以使用用户在本机主动授权的浏览器会话。会话凭证只在用户设备上由对应 adapter 使用，不上传、不经过远程服务，也不写入任务请求或生成结果。
 
 本地会话使用系统安全存储或加密文件保存，并支持过期、更新和立即撤销。详细要求见 [安全策略](SECURITY.md)。
+
+目录划分、依赖方向和 provider 接口见 [架构说明](docs/architecture.md)。AI coding 在修改代码前必须先阅读 [AGENTS.md](AGENTS.md)。
 
 ## 免责声明
 

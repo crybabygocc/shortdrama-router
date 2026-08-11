@@ -1,0 +1,35 @@
+{
+  "name": "shortdrama-router-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@12.0.1",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "check": "npm run build && npm test",
+    "clean": "tsc -b --clean",
+    "test": "npm run build && npm run test --workspaces --if-present",
+    "typecheck": "tsc -b --pretty false"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  },
+  "description": "OpenAI/OpenRouter-compatible image and video routing for short-drama platforms.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crybabygocc/shortdrama-router.git"
+  },
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/crybabygocc/shortdrama-router/issues"
+  },
+  "homepage": "https://github.com/crybabygocc/shortdrama-router#readme"
+}

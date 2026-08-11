@@ -1,0 +1,9 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/provider-xiaoyunque" },
+    { "path": "./packages/http" },
+    { "path": "./packages/sdk" }
+  ]
+}

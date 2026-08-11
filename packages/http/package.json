@@ -1,0 +1,25 @@
+{
+  "name": "@shortdrama-router/http",
+  "version": "0.1.0",
+  "description": "Fetch-compatible HTTP API for shortdrama-router",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "files": ["dist/src"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "@shortdrama-router/core": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}

@@ -1,10 +1,10 @@
-# OpenAI / OpenRouter 视频协议兼容性
+# OpenAI / OpenRouter 图片与视频协议兼容性
 
-更新日期：2026-08-05
+更新日期：2026-08-11
 
 ## 结论
 
-现有协议可以直接复用，不需要为了积分或 provider 管理重新设计一套视频 API。
+现有协议可以直接复用，不需要为了积分或 provider 管理重新设计一套图片或视频 API。
 
 推荐方案是：
 
@@ -13,6 +13,12 @@
 3. provider 的高级参数使用 OpenRouter 已定义的 `provider.options`；
 4. 费用只映射现有 `usage`，没有可靠来源时直接省略；
 5. 会员余额、积分预估和账号管理不进入核心视频协议。
+
+## OpenAI Images API
+
+`POST /v1/images/generations` 作为同步兼容入口，接收 `model`、`prompt`、`n`、`size` 和 `response_format=url`，等待 provider 异步任务完成后返回标准 `{ created, data: [{ url }] }` 对象。
+
+面向需要自行控制轮询的业务，同时提供 `POST /api/v1/images` 和 `GET /api/v1/images/{id}`。多 provider 的模型发现仍然按 provider 分组，不增加全局模型列表。
 
 ## OpenAI Videos API 能直接复用什么
 
@@ -44,7 +50,7 @@ OpenAI 当前创建接口是为自身视频模型定义的，不是完整的多 
 | 首尾帧 | 没有通用字段 | 使用 OpenRouter `frame_images` |
 | 原生音频开关 | 没有通用字段 | 使用 OpenRouter `generate_audio` |
 | provider 特有参数 | 没有通用容器 | 使用 OpenRouter `provider.options` |
-| 多 provider 模型发现 | 通用 `/v1/models` 信息不足 | 使用 `/api/v1/videos/models` |
+| 多 provider 模型发现 | 通用 `/v1/models` 信息不足 | 先查询 `/api/v1/providers`，再使用 `/api/v1/providers/{provider}/models` |
 | 第三方积分与余额 | 没有标准字段 | 不加入核心协议 |
 
 ## 为什么 OpenRouter 更适合作为主协议
@@ -66,10 +72,13 @@ OpenRouter Video API 已经是面向多模型和多 provider 的异步视频协�
 “兼容”应按接口逐项声明：
 
 - `openai-videos-core`：创建、查询、下载；
+- `openai-images-generation`：同步文生图并返回 URL；
+- `router-images-async`：异步生图创建与查询；
 - `openai-videos-edit`：编辑；
 - `openai-videos-extend`：续写；
 - `openai-videos-remix`：重混；
-- `openrouter-video-core`：创建、查询、下载和模型发现；
+- `openrouter-video-core`：创建、查询和下载；
+- `provider-discovery`：服务发现、授权状态和单服务模型查询；
 - `openrouter-video-references`：首尾帧与多参考素材；
 - `openrouter-video-provider-options`：受控原生参数透传。
 
@@ -93,6 +102,7 @@ OpenRouter Video API 已经是面向多模型和多 provider 的异步视频协�
 ## 资料依据
 
 - [OpenAI Videos API](https://developers.openai.com/api/reference/resources/videos)
+- [OpenAI Create image](https://developers.openai.com/api/reference/resources/images/methods/generate)
 - [OpenAI Create video](https://developers.openai.com/api/reference/resources/videos/methods/create)
 - [OpenRouter Video Generation](https://openrouter.ai/docs/guides/overview/multimodal/video-generation)
 - [OpenRouter Create video API](https://openrouter.ai/docs/api/api-reference/video-generation/create-videos)

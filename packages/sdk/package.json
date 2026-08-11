@@ -1,0 +1,30 @@
+{
+  "name": "shortdrama-router",
+  "version": "0.1.0",
+  "description": "OpenAI/OpenRouter-style image and video router for short-drama services",
+  "type": "module",
+  "license": "MIT",
+  "sideEffects": false,
+  "bin": {
+    "shortdrama-router": "./dist/src/cli.js"
+  },
+  "files": ["dist/src", "README.md"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    }
+  },
+  "dependencies": {
+    "@shortdrama-router/core": "0.1.0",
+    "@shortdrama-router/http": "0.1.0",
+    "@shortdrama-router/provider-xiaoyunque": "0.1.0"
+  },
+  "scripts": {
+    "build": "tsc -b --pretty false",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}
