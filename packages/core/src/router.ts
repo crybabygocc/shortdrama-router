@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto"
 import { conflict, invalidRequest, notFound } from "./errors.js"
-import { MemoryImageJobStore, MemoryVideoJobStore } from "./job-store.js"
+import { MemoryAudioJobStore, MemoryImageJobStore, MemoryVideoJobStore } from "./job-store.js"
 import type {
+  AudioCreateRequest,
+  AudioJob,
+  AudioJobStore,
   AuthorizationMethod,
   ImageCreateRequest,
   ImageJob,
@@ -16,6 +19,7 @@ import type {
 } from "./types.js"
 
 export interface ShortDramaRouterOptions {
+  readonly audioJobStore?: AudioJobStore
   readonly imageJobStore?: ImageJobStore
   readonly jobStore?: VideoJobStore
   readonly now?: () => Date
@@ -44,6 +48,7 @@ function requirePrompt(prompt: string) {
 }
 
 export class ShortDramaRouter {
+  readonly #audioJobStore: AudioJobStore
   readonly #imageJobStore: ImageJobStore
   readonly #jobStore: VideoJobStore
   readonly #now: () => Date
@@ -51,6 +56,7 @@ export class ShortDramaRouter {
   readonly #randomId: () => string
 
   constructor(options: ShortDramaRouterOptions = {}) {
+    this.#audioJobStore = options.audioJobStore ?? new MemoryAudioJobStore()
     this.#imageJobStore = options.imageJobStore ?? new MemoryImageJobStore()
     this.#jobStore = options.jobStore ?? new MemoryVideoJobStore()
     this.#now = options.now ?? (() => new Date())
@@ -128,6 +134,72 @@ export class ShortDramaRouter {
 
   async listProviderModels(providerId: string, signal?: AbortSignal): Promise<readonly ProviderModel[]> {
     return this.provider(providerId).listModels(signal === undefined ? {} : { signal })
+  }
+
+  async createAudio(request: AudioCreateRequest, signal?: AbortSignal): Promise<AudioJob> {
+    const modelProvider = providerFromModel(request.model)
+    const providerId = request.provider ?? modelProvider
+    if (!providerId) throw invalidRequest("provider is required when model has no provider prefix")
+    requireIdentifier(providerId, "provider")
+    if (modelProvider && modelProvider !== providerId) throw invalidRequest("provider does not match the model prefix")
+    const input = request.input.trim()
+    if (input.length === 0 || input.length > 4_096) {
+      throw invalidRequest("input must contain 1 to 4096 characters")
+    }
+    const voice = request.voice.trim()
+    if (voice.length === 0 || voice.length > 128) {
+      throw invalidRequest("voice must contain 1 to 128 characters")
+    }
+    const instructions = request.instructions?.trim()
+    if (instructions !== undefined && (instructions.length === 0 || Buffer.byteLength(instructions, "utf8") > 20_000)) {
+      throw invalidRequest("instructions must contain 1 to 20,000 UTF-8 bytes")
+    }
+    if (request.speed !== undefined && (!Number.isFinite(request.speed) || request.speed < 0.25 || request.speed > 4)) {
+      throw invalidRequest("speed must be from 0.25 to 4")
+    }
+    const provider = this.provider(providerId)
+    if (!provider.createAudio) {
+      throw conflict(`provider ${providerId} does not support audio generation`, "audio_generation_unsupported")
+    }
+    const result = await provider.createAudio({
+      ...request,
+      input,
+      voice,
+      ...(instructions === undefined ? {} : { instructions }),
+      provider: providerId,
+    }, signal)
+    const timestamp = this.#now().toISOString()
+    const job: AudioJob = {
+      created_at: timestamp,
+      id: this.#randomId(),
+      model: request.model,
+      provider: providerId,
+      status: result.status,
+      updated_at: timestamp,
+      ...(result.error === undefined ? {} : { error: result.error }),
+      ...(result.outputs === undefined ? {} : { outputs: result.outputs }),
+    }
+    await this.#audioJobStore.put({ job, reference: result.reference })
+    return job
+  }
+
+  async getAudio(id: string, signal?: AbortSignal): Promise<AudioJob> {
+    const stored = await this.#audioJobStore.get(id)
+    if (!stored) throw notFound(`audio job ${id} was not found`, "audio_not_found")
+    const provider = this.provider(stored.job.provider)
+    if (!provider.getAudio) {
+      throw conflict(`provider ${stored.job.provider} does not support audio generation`, "audio_generation_unsupported")
+    }
+    const result = await provider.getAudio(stored.reference, signal)
+    const job: AudioJob = {
+      ...stored.job,
+      status: result.status,
+      updated_at: this.#now().toISOString(),
+      ...(result.error === undefined ? {} : { error: result.error }),
+      ...(result.outputs === undefined ? {} : { outputs: result.outputs }),
+    }
+    await this.#audioJobStore.put({ job, reference: result.reference })
+    return job
   }
 
   async createImage(request: ImageCreateRequest, signal?: AbortSignal): Promise<ImageJob> {

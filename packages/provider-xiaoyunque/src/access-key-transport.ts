@@ -1,10 +1,13 @@
 import type {
+  AudioCreateRequest,
   ImageCreateRequest,
+  ProviderAudioJobResult,
   ProviderImageJobResult,
   ProviderVideoJobResult,
   VideoCreateRequest,
 } from "@shortdrama-router/core"
 import type {
+  XiaoYunqueAudioModelDefinition,
   XiaoYunqueImageModelDefinition,
   XiaoYunqueVideoModelDefinition,
 } from "./catalog.js"
@@ -23,6 +26,7 @@ import {
 const submitPath = "/api/biz/v1/skill/submit_run"
 const queryPath = "/api/biz/v1/agent/query_generate_video_result"
 const probePath = "/api/biz/v1/skill/get_thread"
+const listThreadFilePath = "/api/biz/v1/skill/list_thread_file"
 
 const imageRatioIds: Readonly<Record<string, number>> = {
   auto: 0,
@@ -82,6 +86,52 @@ function imageOutputUrls(entries: unknown, allowLoopback: boolean) {
   return [...urls].map(url => ({ url }))
 }
 
+interface AudioArtifact {
+  readonly filePath: string
+  readonly mime: string
+}
+
+function audioArtifact(entries: unknown): AudioArtifact | undefined {
+  if (!Array.isArray(entries)) return undefined
+  for (const entryValue of entries) {
+    const entry = entryValue && typeof entryValue === "object" ? entryValue as Record<string, unknown> : undefined
+    const artifact = entry?.artifact && typeof entry.artifact === "object"
+      ? entry.artifact as Record<string, unknown>
+      : undefined
+    if (!Array.isArray(artifact?.content)) continue
+    for (const partValue of artifact.content) {
+      const part = partValue && typeof partValue === "object" ? partValue as Record<string, unknown> : undefined
+      if (part?.sub_type !== "biz/x_data_sandbox_file") continue
+      let data: Record<string, unknown> | undefined
+      try {
+        data = typeof part.data === "string" ? JSON.parse(part.data) as Record<string, unknown> : part.data as Record<string, unknown>
+      } catch {
+        continue
+      }
+      if (data?.type !== "audio" || typeof data.file_path !== "string" || typeof data.mime !== "string") continue
+      if (
+        !/^\/workspace\/[a-zA-Z0-9._/-]{1,4000}$/u.test(data.file_path)
+        || data.file_path.split("/").some(segment => segment === "." || segment === "..")
+      ) continue
+      if (!/^audio\/[a-z0-9.+-]{1,64}$/u.test(data.mime)) continue
+      return { filePath: data.file_path, mime: data.mime }
+    }
+  }
+  return undefined
+}
+
+function audioInstruction(request: AudioCreateRequest) {
+  const optionalInstructions = request.instructions?.trim()
+  return [
+    "只生成一份独立语音音频，不要生成图片或视频。",
+    `把下面 JSON 字符串解码后合成为语音，只朗读字符串的值：${JSON.stringify(request.input)}`,
+    `音色要求：${request.voice}。`,
+    `语速倍率：${request.speed ?? 1}。`,
+    optionalInstructions ? `其他要求：${optionalInstructions}` : "背景保持安静，不添加音乐或音效。",
+    "输出 MP3 文件到 /workspace/assets/speech.mp3，并将该文件作为最终音频交付。",
+  ].join("\n")
+}
+
 export class XiaoYunqueAccessKeyTransport implements XiaoYunqueTransport {
   readonly #allowLoopback: boolean
   readonly #baseUrl: URL
@@ -100,6 +150,76 @@ export class XiaoYunqueAccessKeyTransport implements XiaoYunqueTransport {
       headers: headers(credential),
       method: "POST",
     }, signal, [5])
+  }
+
+  async createAudio(
+    model: XiaoYunqueAudioModelDefinition,
+    request: AudioCreateRequest,
+    credential: XiaoYunqueCredential,
+    signal?: AbortSignal,
+  ): Promise<ProviderAudioJobResult> {
+    const result = await requestEnvelope(this.#fetch, new URL(submitPath, this.#baseUrl), {
+      body: JSON.stringify({
+        agent_name: model.upstream_agent,
+        message: audioInstruction(request),
+      }),
+      headers: headers(credential),
+      method: "POST",
+    }, signal)
+    const run = asRecord(result.run, "XiaoYunque run")
+    return {
+      reference: {
+        credential_fingerprint: credentialFingerprint(credential),
+        run_id: requireString(run.run_id, "XiaoYunque run id"),
+        thread_id: requireString(run.thread_id, "XiaoYunque thread id"),
+        transport: "api_key",
+      },
+      status: run.state === undefined ? "queued" : statusFromRunState(run.state),
+    }
+  }
+
+  async getAudio(
+    reference: Readonly<Record<string, unknown>>,
+    credential: XiaoYunqueCredential,
+    signal?: AbortSignal,
+  ): Promise<ProviderAudioJobResult> {
+    const runId = requireString(reference.run_id, "XiaoYunque run id")
+    const threadId = requireString(reference.thread_id, "XiaoYunque thread id")
+    const result = await requestEnvelope(this.#fetch, new URL(probePath, this.#baseUrl), {
+      body: JSON.stringify({ run_id: runId, thread_id: threadId }),
+      headers: headers(credential),
+      method: "POST",
+    }, signal)
+    const thread = asRecord(result.thread, "XiaoYunque thread")
+    const runs = Array.isArray(thread.run_list) ? thread.run_list : []
+    const run = runs
+      .filter(item => item && typeof item === "object")
+      .map(item => item as Record<string, unknown>)
+      .find(item => item.run_id === runId)
+    if (!run) return { reference, status: "queued" }
+    const status = statusFromRunState(run.state)
+    if (status === "failed") {
+      return { error: { code: "generation_failed", message: "XiaoYunque audio generation failed" }, reference, status }
+    }
+    if (status !== "completed") return { reference, status }
+    const artifact = audioArtifact(run.entry_list)
+    if (!artifact) return { reference, status }
+    const filesResult = await requestEnvelope(this.#fetch, new URL(listThreadFilePath, this.#baseUrl), {
+      body: JSON.stringify({ page_num: 1, page_size: 200, thread_id: threadId }),
+      headers: headers(credential),
+      method: "POST",
+    }, signal)
+    const files = Array.isArray(filesResult.files) ? filesResult.files : []
+    const file = files
+      .filter(item => item && typeof item === "object")
+      .map(item => item as Record<string, unknown>)
+      .find(item => item.file_path === artifact.filePath)
+    const url = safeMediaUrl(file?.download_url, this.#allowLoopback)
+    return {
+      ...(url === undefined ? {} : { outputs: [{ content_type: artifact.mime, url }] }),
+      reference,
+      status,
+    }
   }
 
   async createImage(

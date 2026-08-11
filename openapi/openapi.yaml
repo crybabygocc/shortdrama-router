@@ -3,7 +3,7 @@ info:
   title: shortdrama-router API
   version: 0.1.0
   description: >-
-    OpenAI/OpenRouter-style image and video routing for short-drama creation
+    OpenAI/OpenRouter-style audio, image and video routing for short-drama creation
     platforms. Models and authorization are discovered per provider.
   license:
     name: MIT
@@ -22,6 +22,8 @@ tags:
     description: Local server health.
   - name: Providers
     description: Provider discovery, models and authorization.
+  - name: Audio
+    description: Synchronous speech generation.
   - name: Images
     description: Synchronous and asynchronous image generation.
   - name: Videos
@@ -182,6 +184,38 @@ paths:
         '204':
           description: Authorization cleared
         '409':
+          $ref: '#/components/responses/Error'
+  /v1/audio/speech:
+    post:
+      tags: [Audio]
+      operationId: generateOpenAISpeech
+      summary: Generate speech using the OpenAI Audio response shape
+      description: Waits for the provider job and returns MP3 audio bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpenAIAudioSpeechRequest'
+      responses:
+        '200':
+          description: Generated MP3 audio
+          headers:
+            Cache-Control:
+              schema:
+                const: no-store
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/Error'
+        '401':
+          $ref: '#/components/responses/Error'
+        '502':
+          $ref: '#/components/responses/Error'
+        '504':
           $ref: '#/components/responses/Error'
   /v1/images/generations:
     post:
@@ -412,7 +446,7 @@ components:
             generation:
               type: array
               items:
-                enum: [image, video]
+                enum: [audio, image, video]
             models:
               const: true
             usage:
@@ -426,7 +460,7 @@ components:
         provider:
           type: string
         kind:
-          enum: [image, video]
+          enum: [audio, image, video]
         name:
           type: string
         description:
@@ -491,6 +525,43 @@ components:
           type: string
         asset_id:
           type: string
+    OpenAIAudioSpeechRequest:
+      type: object
+      additionalProperties: false
+      required: [input, model, voice]
+      properties:
+        input:
+          type: string
+          minLength: 1
+          maxLength: 4096
+        model:
+          type: string
+          examples: [xiaoyunque/nest-tts]
+        voice:
+          type: string
+          minLength: 1
+          maxLength: 128
+          examples: [清晰自然的中文女声]
+        instructions:
+          type: string
+          minLength: 1
+          maxLength: 20000
+        response_format:
+          const: mp3
+          default: mp3
+        speed:
+          type: number
+          minimum: 0.25
+          maximum: 4
+          default: 1
+        stream_format:
+          const: audio
+          default: audio
+        provider:
+          type: string
+        provider_options:
+          type: object
+          additionalProperties: true
     ImageCreateRequest:
       type: object
       required: [model, prompt]

@@ -18,7 +18,7 @@ function provider(): ProviderAdapter {
     metadata: {
       capabilities: {
         authorization: ["api_key"],
-        generation: ["image", "video"],
+        generation: ["audio", "image", "video"],
         models: true,
         usage: false,
       },
@@ -29,6 +29,9 @@ function provider(): ProviderAdapter {
     async createVideo() {
       return { reference: { remote_id: "remote-1" }, status: "queued" }
     },
+    async createAudio() {
+      return { reference: { remote_id: "remote-audio-1" }, status: "queued" }
+    },
     async createImage() {
       return { reference: { remote_id: "remote-image-1" }, status: "queued" }
     },
@@ -38,6 +41,13 @@ function provider(): ProviderAdapter {
     async getVideo(reference) {
       return {
         outputs: [{ url: "https://media.example/video.mp4" }],
+        reference,
+        status: "completed",
+      }
+    },
+    async getAudio(reference) {
+      return {
+        outputs: [{ content_type: "audio/mpeg", url: "https://media.example/speech.mp3" }],
         reference,
         status: "completed",
       }
@@ -105,4 +115,23 @@ test("routes image creation and polling behind a router-owned job id", async () 
   const completed = await router.getImage(created.id)
   assert.equal(completed.status, "completed")
   assert.equal(completed.outputs?.[0]?.url, "https://media.example/image.png")
+})
+
+test("routes audio creation and polling behind a router-owned job id", async () => {
+  let sequence = 0
+  const router = new ShortDramaRouter({
+    providers: [provider()],
+    randomId: () => `audio-job-${++sequence}`,
+    now: () => new Date("2026-08-11T00:00:00.000Z"),
+  })
+  const created = await router.createAudio({
+    input: "shortdrama-router audio test",
+    model: "test-provider/audio-1",
+    voice: "female",
+  })
+  assert.equal(created.id, "audio-job-1")
+  assert.equal(created.status, "queued")
+  const completed = await router.getAudio(created.id)
+  assert.equal(completed.status, "completed")
+  assert.equal(completed.outputs?.[0]?.url, "https://media.example/speech.mp3")
 })

@@ -22,7 +22,7 @@
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },
-  "description": "OpenAI/OpenRouter-compatible image and video routing for short-drama platforms.",
+  "description": "OpenAI/OpenRouter-compatible audio, image and video routing for short-drama platforms.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/crybabygocc/shortdrama-router.git"

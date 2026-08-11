@@ -1,6 +1,8 @@
 import {
   RouterError,
   ShortDramaRouter,
+  type AudioCreateRequest,
+  type AudioJob,
   type AuthorizationMethod,
   type ImageCreateRequest,
   type ImageJob,
@@ -9,11 +11,20 @@ import {
 } from "@shortdrama-router/core"
 
 const maximumBodyBytes = 1024 * 1024
+const maximumAudioBytes = 50 * 1024 * 1024
+
+export interface LoadedAudio {
+  readonly body: ArrayBuffer
+  readonly contentType: string
+}
 
 export interface RouterHttpHandlerOptions {
+  readonly audioPollIntervalMs?: number
+  readonly audioTimeoutMs?: number
   readonly authorize?: (request: Request) => boolean | Promise<boolean>
   readonly imagePollIntervalMs?: number
   readonly imageTimeoutMs?: number
+  readonly loadAudio?: (url: string, signal?: AbortSignal) => Promise<LoadedAudio>
   readonly sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>
 }
 
@@ -142,6 +153,32 @@ function imageRequest(body: Record<string, unknown>): ImageCreateRequest {
   }
 }
 
+function audioRequest(body: Record<string, unknown>): AudioCreateRequest {
+  const model = optionalJsonString(body.model, "model")
+  const input = optionalJsonString(body.input, "input")
+  const voice = optionalJsonString(body.voice, "voice")
+  if (!model || !input || !voice) throw new RouterError("invalid_request", "model, input and voice are required", 400)
+  if (body.response_format !== undefined && body.response_format !== "mp3") {
+    throw new RouterError("unsupported_parameter", "only response_format=mp3 is supported", 400)
+  }
+  if (body.stream_format !== undefined && body.stream_format !== "audio") {
+    throw new RouterError("unsupported_parameter", "only stream_format=audio is supported", 400)
+  }
+  if (body.speed !== undefined && typeof body.speed !== "number") {
+    throw new RouterError("invalid_request", "speed must be a number", 400)
+  }
+  return {
+    input,
+    model,
+    voice,
+    ...(body.instructions === undefined ? {} : { instructions: optionalJsonString(body.instructions, "instructions")! }),
+    ...(body.provider === undefined ? {} : { provider: optionalJsonString(body.provider, "provider")! }),
+    ...(body.provider_options === undefined ? {} : { provider_options: body.provider_options as Readonly<Record<string, unknown>> }),
+    ...(body.response_format === undefined ? {} : { response_format: "mp3" }),
+    ...(body.speed === undefined ? {} : { speed: body.speed }),
+  }
+}
+
 function withOpenAIImageSize(request: ImageCreateRequest): ImageCreateRequest {
   if (!request.size || request.size === "auto" || request.aspect_ratio) return request
   const aspectRatio = request.size === "1024x1024" || request.size === "512x512" || request.size === "256x256"
@@ -182,6 +219,90 @@ async function waitForImage(
   if (job.status === "cancelled") throw new RouterError("generation_cancelled", "image generation was cancelled", 409)
   if (!job.outputs?.length) throw new RouterError("provider_upstream_error", "image generation completed without output", 502)
   return job
+}
+
+async function waitForAudio(
+  router: ShortDramaRouter,
+  initial: AudioJob,
+  options: RouterHttpHandlerOptions,
+  signal?: AbortSignal,
+) {
+  const interval = options.audioPollIntervalMs ?? 2_000
+  const timeout = options.audioTimeoutMs ?? 30 * 60_000
+  if (!Number.isFinite(interval) || interval < 0 || !Number.isFinite(timeout) || timeout <= 0) {
+    throw new Error("audio polling configuration is invalid")
+  }
+  const deadline = Date.now() + timeout
+  const sleep = options.sleep ?? defaultSleep
+  let job = initial
+  while (job.status === "queued" || job.status === "in_progress") {
+    if (Date.now() >= deadline) throw new RouterError("generation_timeout", "audio generation timed out", 504)
+    await sleep(interval, signal)
+    job = await router.getAudio(job.id, signal)
+  }
+  if (job.status === "failed") {
+    throw new RouterError(job.error?.code ?? "generation_failed", job.error?.message ?? "audio generation failed", 502)
+  }
+  if (job.status === "cancelled") throw new RouterError("generation_cancelled", "audio generation was cancelled", 409)
+  if (!job.outputs?.length) throw new RouterError("provider_upstream_error", "audio generation completed without output", 502)
+  return job
+}
+
+function approvedAudioUrl(value: string) {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new RouterError("audio_download_failed", "provider returned an invalid audio URL", 502)
+  }
+  const officialMediaHost = url.hostname === "jianying.com"
+    || url.hostname.endsWith(".jianying.com")
+    || url.hostname === "byteimg.com"
+    || url.hostname.endsWith(".byteimg.com")
+  if (url.protocol !== "https:" || !officialMediaHost || url.username || url.password || url.port || url.hash) {
+    throw new RouterError("audio_download_failed", "provider returned an unapproved audio URL", 502)
+  }
+  return url
+}
+
+async function defaultLoadAudio(value: string, signal?: AbortSignal): Promise<LoadedAudio> {
+  const response = await fetch(approvedAudioUrl(value), {
+    headers: { Accept: "audio/*" },
+    redirect: "error",
+    ...(signal === undefined ? {} : { signal }),
+  })
+  if (!response.ok || !response.body) throw new RouterError("audio_download_failed", "provider audio download failed", 502)
+  const upstreamContentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase()
+  const contentType = upstreamContentType?.startsWith("audio/")
+    ? upstreamContentType
+    : upstreamContentType === "application/octet-stream"
+      ? "audio/mpeg"
+      : undefined
+  if (!contentType) throw new RouterError("audio_download_failed", "provider returned a non-audio response", 502)
+  const contentLength = Number(response.headers.get("content-length"))
+  if (Number.isFinite(contentLength) && contentLength > maximumAudioBytes) {
+    throw new RouterError("audio_download_failed", "provider audio output is too large", 502)
+  }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > maximumAudioBytes) {
+      await reader.cancel()
+      throw new RouterError("audio_download_failed", "provider audio output is too large", 502)
+    }
+    chunks.push(value)
+  }
+  const body = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    body.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return { body: body.buffer, contentType }
 }
 
 function segments(url: URL) {
@@ -238,6 +359,22 @@ export function createRouterHttpHandler(
             return new Response(null, { status: 204 })
           }
         }
+      }
+      if (path.length === 2 && path[0] === "audio" && path[1] === "speech" && request.method === "POST") {
+        const job = await waitForAudio(
+          router,
+          await router.createAudio(audioRequest(await boundedJson(request)), request.signal),
+          options,
+          request.signal,
+        )
+        const loaded = await (options.loadAudio ?? defaultLoadAudio)(job.outputs![0]!.url, request.signal)
+        return new Response(loaded.body, {
+          headers: {
+            "Cache-Control": "no-store",
+            "Content-Type": loaded.contentType,
+          },
+          status: 200,
+        })
       }
       if (path.length === 1 && path[0] === "images" && request.method === "POST") {
         const body = await boundedJson(request)

@@ -33,6 +33,7 @@ test("prefers an official Access Key and maps create/poll to normalized jobs", a
 
   assert.equal((await provider.getAuthorizationStatus({ probe: true })).state, "valid")
   const created = await provider.createVideo({
+    input_references: [{ provider_asset: { pippit_asset_id: "audio-asset-1" }, type: "audio" }],
     model: "xiaoyunque/seedance-2.5",
     prompt: "A short scene",
   })
@@ -40,6 +41,8 @@ test("prefers an official Access Key and maps create/poll to normalized jobs", a
   assert.equal(created.reference.transport, "api_key")
   const submit = calls.find(call => call.path.endsWith("/skill/submit_run"))?.body
   assert.equal(submit?.agent_name, "pippit_video_part_agent")
+  assert.deepEqual(submit?.asset_ids, ["audio-asset-1"])
+  assert.deepEqual((submit?.video_part_tool_param as Record<string, unknown>)?.audios, [{ pippit_asset_id: "audio-asset-1" }])
   const completed = await provider.getVideo(created.reference)
   assert.equal(completed.status, "completed")
   assert.equal(completed.outputs?.[0]?.url, "http://127.0.0.1:8787/video.mp4")
@@ -102,6 +105,78 @@ test("maps image generation to the official Nest Agent and returns image outputs
   const completed = await provider.getImage(created.reference)
   assert.equal(completed.status, "completed")
   assert.equal(completed.outputs?.[0]?.url, "http://127.0.0.1:8787/generated.png")
+})
+
+test("maps experimental speech generation to a Nest Agent audio artifact", async () => {
+  let submitted: Record<string, unknown> | undefined
+  const provider = new XiaoYunqueProvider({
+    accessKey: "ak-audio-test",
+    baseUrl: "http://127.0.0.1:8787",
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString())
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      assert.equal(new Headers(init?.headers).get("authorization"), "Bearer ak-audio-test")
+      if (url.pathname.endsWith("/skill/submit_run")) {
+        submitted = body
+        return response({ ret: 0, data: { run: { run_id: "audio-run-1", thread_id: "audio-thread-1", state: 1 } } })
+      }
+      if (url.pathname.endsWith("/skill/get_thread")) {
+        return response({
+          ret: 0,
+          data: {
+            thread: {
+              run_list: [{
+                entry_list: [{
+                  artifact: {
+                    content: [{
+                      data: JSON.stringify({
+                        file_path: "/workspace/assets/speech.mp3",
+                        mime: "audio/mpeg",
+                        type: "audio",
+                      }),
+                      sub_type: "biz/x_data_sandbox_file",
+                    }],
+                  },
+                }],
+                run_id: "audio-run-1",
+                state: 3,
+              }],
+            },
+          },
+        })
+      }
+      if (url.pathname.endsWith("/skill/list_thread_file")) {
+        assert.deepEqual(body, { page_num: 1, page_size: 200, thread_id: "audio-thread-1" })
+        return response({
+          ret: 0,
+          data: {
+            files: [{
+              download_url: "http://127.0.0.1:8787/speech.mp3",
+              file_path: "/workspace/assets/speech.mp3",
+            }],
+          },
+        })
+      }
+      throw new Error(`unexpected path ${url.pathname}`)
+    },
+  })
+
+  const created = await provider.createAudio({
+    input: "音频接口测试成功。",
+    model: "xiaoyunque/nest-tts",
+    speed: 1.1,
+    voice: "清晰自然的中文女声",
+  })
+  assert.equal(created.status, "queued")
+  assert.equal(submitted?.agent_name, "pippit_nest_agent")
+  assert.match(String(submitted?.message), /音频接口测试成功/u)
+  const completed = await provider.getAudio(created.reference)
+  assert.equal(completed.status, "completed")
+  assert.deepEqual(completed.outputs, [{ content_type: "audio/mpeg", url: "http://127.0.0.1:8787/speech.mp3" }])
+
+  const model = (await provider.listModels()).find(item => item.id === "xiaoyunque/nest-tts")
+  assert.equal(model?.kind, "audio")
+  assert.equal("upstream_agent" in (model ?? {}), false)
 })
 
 test("rejects Mini Lite resolutions that XiaoYunque silently coerces", async () => {

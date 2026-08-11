@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto"
 import type {
+  AudioCreateRequest,
   ImageCreateRequest,
   ProviderAssetReference,
+  ProviderAudioJobResult,
   ProviderImageJobResult,
   ProviderVideoJobResult,
   VideoCreateRequest,
@@ -9,6 +11,7 @@ import type {
   GenerationJobStatus,
 } from "@shortdrama-router/core"
 import type {
+  XiaoYunqueAudioModelDefinition,
   XiaoYunqueImageModelDefinition,
   XiaoYunqueVideoModelDefinition,
 } from "./catalog.js"
@@ -19,6 +22,12 @@ export type XiaoYunqueCredential =
   | { readonly cookie: string; readonly mode: "browser_session" }
 
 export interface XiaoYunqueTransport {
+  createAudio?(
+    model: XiaoYunqueAudioModelDefinition,
+    request: AudioCreateRequest,
+    credential: XiaoYunqueCredential,
+    signal?: AbortSignal,
+  ): Promise<ProviderAudioJobResult>
   createImage?(
     model: XiaoYunqueImageModelDefinition,
     request: ImageCreateRequest,
@@ -36,6 +45,11 @@ export interface XiaoYunqueTransport {
     credential: XiaoYunqueCredential,
     signal?: AbortSignal,
   ): Promise<ProviderImageJobResult>
+  getAudio?(
+    reference: Readonly<Record<string, unknown>>,
+    credential: XiaoYunqueCredential,
+    signal?: AbortSignal,
+  ): Promise<ProviderAudioJobResult>
   getVideo(
     reference: Readonly<Record<string, unknown>>,
     credential: XiaoYunqueCredential,

@@ -8,7 +8,7 @@ import { createRouterHttpHandler } from "../src/index.js"
 
 const provider: ProviderAdapter = {
   metadata: {
-    capabilities: { authorization: ["api_key"], generation: ["image", "video"], models: true, usage: false },
+    capabilities: { authorization: ["api_key"], generation: ["audio", "image", "video"], models: true, usage: false },
     description: "Test provider",
     id: "test-provider",
     name: "Test Provider",
@@ -19,6 +19,9 @@ const provider: ProviderAdapter = {
   async createImage() {
     return { reference: { remote: "image-1" }, status: "queued" }
   },
+  async createAudio() {
+    return { reference: { remote: "audio-1" }, status: "queued" }
+  },
   async getAuthorizationStatus() {
     return { authorized: true, configured: true, method: "api_key", state: "valid" }
   },
@@ -27,6 +30,9 @@ const provider: ProviderAdapter = {
   },
   async getImage(reference) {
     return { outputs: [{ url: "https://example.com/image.png" }], reference, status: "completed" }
+  },
+  async getAudio(reference) {
+    return { outputs: [{ content_type: "audio/mpeg", url: "https://media.example/speech.mp3" }], reference, status: "completed" }
   },
   async listModels() {
     return [{
@@ -107,4 +113,32 @@ test("waits for an image and returns the OpenAI Images response shape", async ()
     created: 1_786_406_400,
     data: [{ url: "https://example.com/image.png" }],
   })
+})
+
+test("waits for speech and returns the OpenAI audio response body", async () => {
+  const router = new ShortDramaRouter({ providers: [provider], randomId: () => "audio-job-openai" })
+  const expected = new TextEncoder().encode("fake-mp3")
+  const handle = createRouterHttpHandler(router, {
+    audioPollIntervalMs: 0,
+    loadAudio: async url => {
+      assert.equal(url, "https://media.example/speech.mp3")
+      return { body: expected.buffer, contentType: "audio/mpeg" }
+    },
+    sleep: async () => undefined,
+  })
+  const response = await handle(new Request("http://router.local/v1/audio/speech", {
+    body: JSON.stringify({
+      input: "音频接口测试成功。",
+      model: "test-provider/audio-1",
+      response_format: "mp3",
+      speed: 1,
+      stream_format: "audio",
+      voice: "female",
+    }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  }))
+  assert.equal(response.status, 200)
+  assert.equal(response.headers.get("content-type"), "audio/mpeg")
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), expected)
 })

@@ -1,17 +1,21 @@
 import { randomUUID } from "node:crypto"
 import type {
+  AudioCreateRequest,
   AuthorizationMethod,
   ImageCreateRequest,
   ProviderAdapter,
   ProviderAuthorizationCompletion,
   ProviderAuthorizationStatus,
+  ProviderAudioJobResult,
   ProviderVideoJobResult,
   VideoCreateRequest,
 } from "@shortdrama-router/core"
 import {
   publicXiaoYunqueModel,
+  resolveXiaoYunqueAudioModel,
   resolveXiaoYunqueImageModel,
   resolveXiaoYunqueVideoModel,
+  validateXiaoYunqueAudioRequest,
   validateXiaoYunqueImageRequest,
   validateXiaoYunqueVideoRequest,
   XIAOYUNQUE_MODELS,
@@ -107,11 +111,11 @@ export class XiaoYunqueProvider implements ProviderAdapter {
   readonly metadata = {
     capabilities: {
       authorization: ["api_key", "browser_session"],
-      generation: ["image", "video"],
+      generation: ["audio", "image", "video"],
       models: true,
       usage: false,
     },
-    description: "XiaoYunque short-drama image and video generation service.",
+    description: "XiaoYunque short-drama audio, image and video generation service.",
     id: "xiaoyunque",
     name: "XiaoYunque",
   } as const
@@ -259,6 +263,44 @@ export class XiaoYunqueProvider implements ProviderAdapter {
     await this.#credentials.clear()
     this.#pendingAuthorization = undefined
     this.#observations.clear()
+  }
+
+  async createAudio(request: AudioCreateRequest, signal?: AbortSignal): Promise<ProviderAudioJobResult> {
+    const snapshot = await this.#credentials.read()
+    const selected = this.#credentialForMode(snapshot, "api_key")
+    if (!selected || !selected.transport.createAudio) {
+      throw new XiaoYunqueAuthenticationError("XiaoYunque audio generation requires an Access Key")
+    }
+    const model = resolveXiaoYunqueAudioModel(request.model)
+    validateXiaoYunqueAudioRequest(model, request)
+    try {
+      const result = await selected.transport.createAudio(model, request, selected.credential, signal)
+      this.#observe("api_key", "valid")
+      return result
+    } catch (error) {
+      this.#observeFailure("api_key", error)
+      throw error
+    }
+  }
+
+  async getAudio(reference: Readonly<Record<string, unknown>>, signal?: AbortSignal): Promise<ProviderAudioJobResult> {
+    if (reference.transport !== "api_key") throw new XiaoYunqueInputError("XiaoYunque audio job reference is invalid")
+    const snapshot = await this.#credentials.read()
+    const selected = this.#credentialForMode(snapshot, "api_key")
+    if (!selected || !selected.transport.getAudio) {
+      throw new XiaoYunqueAuthenticationError("the Access Key used by this XiaoYunque audio job is unavailable")
+    }
+    if (reference.credential_fingerprint !== credentialFingerprint(selected.credential)) {
+      throw new XiaoYunqueAuthenticationError("the credential used by this XiaoYunque audio job has changed")
+    }
+    try {
+      const result = await selected.transport.getAudio(reference, selected.credential, signal)
+      this.#observe("api_key", "valid")
+      return result
+    } catch (error) {
+      this.#observeFailure("api_key", error)
+      throw error
+    }
   }
 
   async createImage(request: ImageCreateRequest, signal?: AbortSignal) {

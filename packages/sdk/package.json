@@ -1,7 +1,7 @@
 {
   "name": "shortdrama-router",
   "version": "0.1.0",
-  "description": "OpenAI/OpenRouter-style image and video router for short-drama services",
+  "description": "OpenAI/OpenRouter-style audio, image and video router for short-drama services",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,

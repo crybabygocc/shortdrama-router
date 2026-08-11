@@ -1,4 +1,5 @@
 import type {
+  AudioCreateRequest,
   ImageCreateRequest,
   ProviderModel,
   VideoCreateRequest,
@@ -14,6 +15,21 @@ export interface XiaoYunqueVideoModelDefinition extends ProviderModel {
   readonly kind: "video"
   readonly upstream_model: string
 }
+
+export interface XiaoYunqueAudioModelDefinition extends ProviderModel {
+  readonly kind: "audio"
+  readonly upstream_agent: string
+}
+
+export const XIAOYUNQUE_AUDIO_MODELS: readonly XiaoYunqueAudioModelDefinition[] = [{
+  capabilities: { audio_formats: ["mp3"] },
+  description: "Experimental speech synthesis orchestrated by XiaoYunque Nest Agent. Voice availability and synthesis tools may vary.",
+  id: "xiaoyunque/nest-tts",
+  kind: "audio",
+  name: "Nest Agent Speech",
+  provider: "xiaoyunque",
+  upstream_agent: "pippit_nest_agent",
+}]
 
 const imageAspectRatios = ["auto", "16:9", "21:9", "9:16", "4:3", "3:4", "1:1"] as const
 
@@ -104,11 +120,15 @@ export const XIAOYUNQUE_VIDEO_MODELS: readonly XiaoYunqueVideoModelDefinition[] 
   },
 ]
 
-export const XIAOYUNQUE_MODELS: readonly (XiaoYunqueImageModelDefinition | XiaoYunqueVideoModelDefinition)[] = [
+export const XIAOYUNQUE_MODELS: readonly (
+  XiaoYunqueAudioModelDefinition | XiaoYunqueImageModelDefinition | XiaoYunqueVideoModelDefinition
+)[] = [
+  ...XIAOYUNQUE_AUDIO_MODELS,
   ...XIAOYUNQUE_IMAGE_MODELS,
   ...XIAOYUNQUE_VIDEO_MODELS,
 ]
 
+const audioModelsById = new Map(XIAOYUNQUE_AUDIO_MODELS.map(model => [model.id, model]))
 const imageModelsById = new Map(XIAOYUNQUE_IMAGE_MODELS.map(model => [model.id, model]))
 const videoModelsById = new Map(XIAOYUNQUE_VIDEO_MODELS.map(model => [model.id, model]))
 
@@ -116,6 +136,22 @@ export function resolveXiaoYunqueImageModel(modelId: string) {
   const model = imageModelsById.get(modelId)
   if (!model) throw new XiaoYunqueInputError(`unknown XiaoYunque image model: ${modelId}`)
   return model
+}
+
+export function resolveXiaoYunqueAudioModel(modelId: string) {
+  const model = audioModelsById.get(modelId)
+  if (!model) throw new XiaoYunqueInputError(`unknown XiaoYunque audio model: ${modelId}`)
+  return model
+}
+
+export function validateXiaoYunqueAudioRequest(
+  model: XiaoYunqueAudioModelDefinition,
+  request: AudioCreateRequest,
+) {
+  const format = request.response_format ?? "mp3"
+  if (!model.capabilities.audio_formats?.includes(format)) {
+    throw new XiaoYunqueInputError(`${model.id} does not support audio format ${format}`)
+  }
 }
 
 export function resolveXiaoYunqueVideoModel(modelId: string) {
@@ -164,8 +200,12 @@ export function validateXiaoYunqueVideoRequest(
 }
 
 export function publicXiaoYunqueModel(
-  model: XiaoYunqueImageModelDefinition | XiaoYunqueVideoModelDefinition,
+  model: XiaoYunqueAudioModelDefinition | XiaoYunqueImageModelDefinition | XiaoYunqueVideoModelDefinition,
 ): ProviderModel {
+  if (model.kind === "audio") {
+    const { upstream_agent: _upstreamAgent, ...result } = model
+    return structuredClone(result)
+  }
   const { upstream_model: _upstreamModel, ...result } = model
   return structuredClone(result)
 }

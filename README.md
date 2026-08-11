@@ -1,12 +1,12 @@
 # shortdrama-router
 
-**把 libtv、小云雀、即梦、可灵等漫剧与视频创作平台，路由成 OpenRouter / OpenAI 风格的图片与视频生成 API。**
+**把 libtv、小云雀、即梦、可灵等漫剧与视频创作平台，路由成 OpenRouter / OpenAI 风格的音频、图片与视频生成 API。**
 
 `shortdrama-router` 是一个面向漫剧、AI 短剧和视频工作流的开源 API 路由器。业务只需要接入一套熟悉的视频任务协议，就可以按 `provider/model` 选择不同创作平台；平台账号、模型能力和实际生成仍由用户分别授权的 provider 提供。
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：`0.1.0` / pre-alpha。已提供 provider 对齐层、小云雀生图/生视频 adapter、可直接启动的本地 HTTP 服务和可发布的 npm 聚合包；其他 provider 仍在规划中。
+> 当前状态：`0.1.0` / pre-alpha。已提供 provider 对齐层、小云雀生图、生视频和实验性独立语音能力、可直接启动的本地 HTTP 服务和可发布的 npm 聚合包；其他 provider 仍在规划中。
 
 ## 为什么使用 shortdrama-router
 
@@ -35,8 +35,9 @@ OpenRouter 的视频接口更适合多模型路由，已经定义了：
 
 ### OpenAI 风格：兼容协议
 
-同时提供 OpenAI Images / Videos API 兼容入口：
+同时提供 OpenAI Audio / Images / Videos API 兼容入口：
 
+- `POST /v1/audio/speech`：同步等待并返回 MP3 音频；
 - `POST /v1/images/generations`：同步等待并返回图片 URL；
 - `POST /v1/videos`；
 - `GET /v1/videos/{id}`；
@@ -88,6 +89,23 @@ npx shortdrama-router serve --host 127.0.0.1 --port 8080
 默认只监听 `127.0.0.1:8080`。绑定到非回环地址时必须配置 `SHORTDRAMA_ROUTER_KEY`。
 
 ## 调用示例
+
+OpenAI 风格语音生成：
+
+```bash
+curl http://localhost:8080/v1/audio/speech \
+  -H "Authorization: Bearer $SHORTDRAMA_ROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "xiaoyunque/nest-tts",
+    "input": "这一集的故事，从一封神秘来信开始。",
+    "voice": "清晰自然的中文女声",
+    "response_format": "mp3"
+  }' \
+  --output speech.mp3
+```
+
+`xiaoyunque/nest-tts` 是由小云雀 Nest Agent 编排的实验性语音能力，不代表小云雀提供了同名原生音频模型；实际可用音色、合成工具和耗时可能随上游环境变化。
 
 OpenAI 风格生图：
 
@@ -157,7 +175,7 @@ curl http://localhost:8080/api/v1/videos \
 
 当前与首批目标包括：
 
-- `xiaoyunque/*`：已实现用户主动登录后自动创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频、本地 Web 会话 fallback、模型发现、授权状态、任务提交和轮询；
+- `xiaoyunque/*`：已实现用户主动登录后自动创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频及音频参考、实验性 Nest Agent 独立语音、本地 Web 会话 fallback、模型发现、授权状态、任务提交和轮询；
 - `libtv/*`：计划支持会话式视频创作、编辑和复杂 Agent 工作流；
 - `jimeng/*`：即梦图像、视频和编辑能力；
 - `kling/*`：可灵文生视频、图生视频、参考生成和视频编辑能力。

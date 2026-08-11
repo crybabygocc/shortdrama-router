@@ -26,6 +26,7 @@ export function createShortDramaRouter(options: CreateShortDramaRouterOptions = 
   }
   return new ShortDramaRouter({
     providers,
+    ...(options.audioJobStore === undefined ? {} : { audioJobStore: options.audioJobStore }),
     ...(options.imageJobStore === undefined ? {} : { imageJobStore: options.imageJobStore }),
     ...(options.jobStore === undefined ? {} : { jobStore: options.jobStore }),
     ...(options.now === undefined ? {} : { now: options.now }),

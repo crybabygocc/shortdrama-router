@@ -2,7 +2,7 @@
 
 One npm package that exports the router, HTTP handler and every bundled provider.
 
-Start a local OpenAI/OpenRouter-style image and video API:
+Start a local OpenAI/OpenRouter-style audio, image and video API:
 
 ```bash
 export XYQ_ACCESS_KEY="<your-xiaoyunque-access-key>"
@@ -36,6 +36,6 @@ const models = await router.listProviderModels("xiaoyunque")
 const handle = createRouterHttpHandler(router)
 ```
 
-The server exposes synchronous OpenAI-compatible image generation at `POST /v1/images/generations`, asynchronous image jobs under `/api/v1/images`, and asynchronous video jobs under `/v1/videos` and `/api/v1/videos`.
+The server exposes synchronous OpenAI-compatible speech generation at `POST /v1/audio/speech`, synchronous image generation at `POST /v1/images/generations`, asynchronous image jobs under `/api/v1/images`, and asynchronous video jobs under `/v1/videos` and `/api/v1/videos`.
 
 `createShortDramaRouter()` always installs the XiaoYunque adapter, even when it has no credentials. This lets applications show supported services and their authorization state before login.

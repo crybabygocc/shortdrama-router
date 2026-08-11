@@ -1,10 +1,10 @@
-# OpenAI / OpenRouter 图片与视频协议兼容性
+# OpenAI / OpenRouter 音频、图片与视频协议兼容性
 
 更新日期：2026-08-11
 
 ## 结论
 
-现有协议可以直接复用，不需要为了积分或 provider 管理重新设计一套图片或视频 API。
+现有协议可以直接复用，不需要为了积分或 provider 管理重新设计一套音频、图片或视频 API。
 
 推荐方案是：
 
@@ -13,6 +13,12 @@
 3. provider 的高级参数使用 OpenRouter 已定义的 `provider.options`；
 4. 费用只映射现有 `usage`，没有可靠来源时直接省略；
 5. 会员余额、积分预估和账号管理不进入核心视频协议。
+
+## OpenAI Audio API
+
+独立语音直接复用 `POST /v1/audio/speech`：请求使用 `model`、`input`、`voice`、`instructions`、`response_format` 和 `speed`，成功后直接返回音频二进制。
+
+当前公共层实现 MP3 与普通音频流响应。某个 provider 没有稳定的原生语音模型时，可以不声明音频能力；小云雀当前的 `xiaoyunque/nest-tts` 是由 Nest Agent 编排的实验性语音能力，不把它描述成官方同名模型。视频任务中的音频参考仍使用 `input_references`，与独立语音生成分开表达。
 
 ## OpenAI Images API
 
@@ -72,6 +78,7 @@ OpenRouter Video API 已经是面向多模型和多 provider 的异步视频协�
 “兼容”应按接口逐项声明：
 
 - `openai-videos-core`：创建、查询、下载；
+- `openai-audio-speech`：同步文字转语音并返回音频；
 - `openai-images-generation`：同步文生图并返回 URL；
 - `router-images-async`：异步生图创建与查询；
 - `openai-videos-edit`：编辑；
@@ -102,6 +109,7 @@ OpenRouter Video API 已经是面向多模型和多 provider 的异步视频协�
 ## 资料依据
 
 - [OpenAI Videos API](https://developers.openai.com/api/reference/resources/videos)
+- [OpenAI Create speech](https://developers.openai.com/api/reference/resources/audio/subresources/speech/methods/create)
 - [OpenAI Create image](https://developers.openai.com/api/reference/resources/images/methods/generate)
 - [OpenAI Create video](https://developers.openai.com/api/reference/resources/videos/methods/create)
 - [OpenRouter Video Generation](https://openrouter.ai/docs/guides/overview/multimodal/video-generation)

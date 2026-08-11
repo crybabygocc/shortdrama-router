@@ -20,7 +20,7 @@ export interface ProviderAuthorizationStatus {
 
 export interface ProviderCapabilities {
   readonly authorization: readonly AuthorizationMethod[]
-  readonly generation: readonly ("image" | "video")[]
+  readonly generation: readonly ("audio" | "image" | "video")[]
   readonly models: true
   readonly usage: boolean
 }
@@ -37,6 +37,7 @@ export interface ProviderDescriptor extends ProviderMetadata {
 }
 
 export interface ProviderModelCapabilities {
+  readonly audio_formats?: readonly string[]
   readonly aspect_ratios?: readonly string[]
   readonly audio_input?: boolean
   readonly durations?: readonly number[] | null
@@ -52,7 +53,7 @@ export interface ProviderModel {
   readonly capabilities: ProviderModelCapabilities
   readonly description: string
   readonly id: string
-  readonly kind: "image" | "video"
+  readonly kind: "audio" | "image" | "video"
   readonly name: string
   readonly provider: string
 }
@@ -97,6 +98,17 @@ export interface ImageCreateRequest {
   readonly size?: string
 }
 
+export interface AudioCreateRequest {
+  readonly input: string
+  readonly instructions?: string
+  readonly model: string
+  readonly provider?: string
+  readonly provider_options?: Readonly<Record<string, unknown>>
+  readonly response_format?: "mp3"
+  readonly speed?: number
+  readonly voice: string
+}
+
 export type GenerationJobStatus =
   | "queued"
   | "in_progress"
@@ -105,7 +117,24 @@ export type GenerationJobStatus =
   | "cancelled"
 
 export type ImageJobStatus = GenerationJobStatus
+export type AudioJobStatus = GenerationJobStatus
 export type VideoJobStatus = GenerationJobStatus
+
+export interface AudioOutput {
+  readonly content_type?: string
+  readonly url: string
+}
+
+export interface AudioJob {
+  readonly created_at: string
+  readonly error?: { readonly code: string; readonly message: string }
+  readonly id: string
+  readonly model: string
+  readonly outputs?: readonly AudioOutput[]
+  readonly provider: string
+  readonly status: AudioJobStatus
+  readonly updated_at: string
+}
 
 export interface ImageOutput {
   readonly content_type?: string
@@ -153,6 +182,13 @@ export interface ProviderImageJobResult {
   readonly status: ImageJobStatus
 }
 
+export interface ProviderAudioJobResult {
+  readonly error?: { readonly code: string; readonly message: string }
+  readonly outputs?: readonly AudioOutput[]
+  readonly reference: Readonly<Record<string, unknown>>
+  readonly status: AudioJobStatus
+}
+
 export interface ProviderAuthorizationRequest {
   readonly authorization_id: string
   readonly cookie_names?: readonly string[]
@@ -184,6 +220,10 @@ export interface ProviderAdapter {
     completion: ProviderAuthorizationCompletion,
     signal?: AbortSignal,
   ): Promise<ProviderAuthorizationStatus>
+  createAudio?(
+    request: AudioCreateRequest,
+    signal?: AbortSignal,
+  ): Promise<ProviderAudioJobResult>
   createImage?(
     request: ImageCreateRequest,
     signal?: AbortSignal,
@@ -196,6 +236,10 @@ export interface ProviderAdapter {
     readonly probe?: boolean
     readonly signal?: AbortSignal
   }): Promise<ProviderAuthorizationStatus>
+  getAudio?(
+    reference: Readonly<Record<string, unknown>>,
+    signal?: AbortSignal,
+  ): Promise<ProviderAudioJobResult>
   getImage?(
     reference: Readonly<Record<string, unknown>>,
     signal?: AbortSignal,
@@ -214,6 +258,11 @@ export interface StoredImageJob {
   readonly reference: Readonly<Record<string, unknown>>
 }
 
+export interface StoredAudioJob {
+  readonly job: AudioJob
+  readonly reference: Readonly<Record<string, unknown>>
+}
+
 export interface StoredVideoJob {
   readonly job: VideoJob
   readonly reference: Readonly<Record<string, unknown>>
@@ -227,4 +276,9 @@ export interface VideoJobStore {
 export interface ImageJobStore {
   get(id: string): Promise<StoredImageJob | undefined>
   put(value: StoredImageJob): Promise<void>
+}
+
+export interface AudioJobStore {
+  get(id: string): Promise<StoredAudioJob | undefined>
+  put(value: StoredAudioJob): Promise<void>
 }
