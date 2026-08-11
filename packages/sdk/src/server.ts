@@ -4,11 +4,16 @@ import { Readable } from "node:stream"
 import type { ReadableStream as NodeReadableStream } from "node:stream/web"
 import { ShortDramaRouter } from "@shortdrama-router/core"
 import { createRouterHttpHandler } from "@shortdrama-router/http"
+import { JimengProvider } from "@shortdrama-router/provider-jimeng"
+import { LibTvProvider } from "@shortdrama-router/provider-libtv"
 import { XiaoYunqueProvider } from "@shortdrama-router/provider-xiaoyunque"
 
 export interface RouterServerOptions {
   readonly accessKey?: string
   readonly host?: string
+  readonly jimengCliPath?: string
+  readonly libtvCliPath?: string
+  readonly libtvProjectUuid?: string
   readonly port?: number
   readonly router?: ShortDramaRouter
   readonly routerKey?: string
@@ -73,9 +78,18 @@ export async function startRouterServer(options: RouterServerOptions = {}): Prom
     throw new Error("SHORTDRAMA_ROUTER_KEY is required when binding outside loopback")
   }
   const router = options.router ?? new ShortDramaRouter({
-    providers: [new XiaoYunqueProvider({
-      ...(options.accessKey === undefined ? {} : { accessKey: options.accessKey }),
-    })],
+    providers: [
+      new JimengProvider({
+        ...(options.jimengCliPath === undefined ? {} : { cliPath: options.jimengCliPath }),
+      }),
+      new LibTvProvider({
+        ...(options.libtvCliPath === undefined ? {} : { cliPath: options.libtvCliPath }),
+        ...(options.libtvProjectUuid === undefined ? {} : { projectUuid: options.libtvProjectUuid }),
+      }),
+      new XiaoYunqueProvider({
+        ...(options.accessKey === undefined ? {} : { accessKey: options.accessKey }),
+      }),
+    ],
   })
   const handle = createRouterHttpHandler(router, {
     ...(options.routerKey === undefined ? {} : {

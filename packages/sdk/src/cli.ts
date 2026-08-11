@@ -113,10 +113,16 @@ export async function runCli(args: readonly string[], options: CliOptions = {}) 
     }
     const start = options.startServer ?? startRouterServer
     const accessKey = process.env.XYQ_ACCESS_KEY ?? process.env.XIAOYUNQUE_ACCESS_KEY
+    const jimengCliPath = process.env.DREAMINA_CLI_PATH
+    const libtvCliPath = process.env.LIBTV_CLI_PATH
+    const libtvProjectUuid = process.env.LIBTV_PROJECT_UUID
     const routerKey = process.env.SHORTDRAMA_ROUTER_KEY
     const server = await start({
       ...(accessKey === undefined ? {} : { accessKey }),
       ...(host === undefined ? {} : { host }),
+      ...(jimengCliPath === undefined ? {} : { jimengCliPath }),
+      ...(libtvCliPath === undefined ? {} : { libtvCliPath }),
+      ...(libtvProjectUuid === undefined ? {} : { libtvProjectUuid }),
       ...(port === undefined ? {} : { port }),
       ...(routerKey === undefined ? {} : { routerKey }),
     })
@@ -132,6 +138,13 @@ export async function runCli(args: readonly string[], options: CliOptions = {}) 
     return 2
   }
   const router = options.router ?? createShortDramaRouter({
+    jimeng: process.env.DREAMINA_CLI_PATH === undefined
+      ? {}
+      : { cliPath: process.env.DREAMINA_CLI_PATH },
+    libtv: {
+      ...(process.env.LIBTV_CLI_PATH === undefined ? {} : { cliPath: process.env.LIBTV_CLI_PATH }),
+      ...(process.env.LIBTV_PROJECT_UUID === undefined ? {} : { projectUuid: process.env.LIBTV_PROJECT_UUID }),
+    },
     xiaoyunque: {
       accessKey: process.env.XYQ_ACCESS_KEY ?? process.env.XIAOYUNQUE_ACCESS_KEY,
     },

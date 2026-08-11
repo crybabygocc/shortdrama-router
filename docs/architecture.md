@@ -6,6 +6,8 @@
 
 ```text
 packages/core/                  provider contracts, registry, routing, job store
+packages/provider-jimeng/       official Dreamina CLI adapter and OAuth Device Flow
+packages/provider-libtv/        official LibTV CLI adapter and live model catalog
 packages/provider-xiaoyunque/  XiaoYunque catalog, credentials and transports
 packages/http/                  Fetch-compatible HTTP handler
 packages/sdk/                   public npm package that exports all services
@@ -15,6 +17,8 @@ Dependency direction is one-way:
 
 ```text
 sdk -> http -> core
+sdk -> provider-jimeng -> core
+sdk -> provider-libtv -> core
 sdk -> provider-xiaoyunque -> core
 ```
 
@@ -60,6 +64,12 @@ Interactive `api_key` authorization asks the local host to open XiaoYunque's off
 The Access Key transport uses the official `/api/biz/v1/skill/*` surfaces. The Web-session transport remains an explicit fallback for capabilities not covered by the Access Key API and uses the user-visible XiaoYunque Web APIs only with credentials supplied by a local credential store. The package does not include a remote credential store.
 
 Authorization inspection distinguishes configured, verified, expiring and expired credentials. When the provider cannot safely verify an Access Key, it reports `configured` rather than inventing validity.
+
+## Official local CLI providers
+
+The Jimeng and LibTV adapters execute their official local CLIs as argument arrays without a shell. Their OAuth credentials stay in each CLI's own local credential store; the router only reads command results and never imports tokens into provider job records.
+
+Jimeng maps router image/video jobs to the official `dreamina` asynchronous submit and query commands. LibTV maps jobs to uniquely named image/video nodes on a configured user canvas and waits for the official `libtv node --run` terminal JSON. Neither adapter estimates credits when the official command output does not supply a stable per-request estimate.
 
 ## Media references
 

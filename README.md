@@ -6,7 +6,7 @@
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：`0.1.0` / pre-alpha。已提供 provider 对齐层、小云雀 Seed Audio、生图和生视频能力、可直接启动的本地 HTTP 服务和可发布的 npm 聚合包；其他 provider 仍在规划中。
+> 当前状态：`0.2.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型发现、授权状态、本地 HTTP 服务和 npm 聚合包。
 
 ## 为什么使用 shortdrama-router
 
@@ -67,6 +67,13 @@ import {
 } from "shortdrama-router"
 
 const router = createShortDramaRouter({
+  jimeng: {
+    cliPath: process.env.DREAMINA_CLI_PATH,
+  },
+  libtv: {
+    cliPath: process.env.LIBTV_CLI_PATH,
+    projectUuid: process.env.LIBTV_PROJECT_UUID,
+  },
   xiaoyunque: {
     accessKey: process.env.XIAOYUNQUE_ACCESS_KEY,
   },
@@ -83,6 +90,9 @@ const handle = createRouterHttpHandler(router)
 
 ```bash
 export XYQ_ACCESS_KEY="<your-xiaoyunque-access-key>"
+export LIBTV_CLI_PATH="$HOME/.libtv/libtv"
+export LIBTV_PROJECT_UUID="<your-libtv-canvas-uuid>"
+export DREAMINA_CLI_PATH="$HOME/.local/bin/dreamina"
 export SHORTDRAMA_ROUTER_KEY="<your-local-router-key>"
 npx shortdrama-router serve --host 127.0.0.1 --port 8080
 ```
@@ -122,6 +132,23 @@ curl http://localhost:8080/v1/images/generations \
 
 异步生图可使用 `POST /api/v1/images`，再通过 `GET /api/v1/images/{id}` 查询任务。
 
+LibTV 生图使用同一个 OpenAI Images 入口，只需要切换模型。LibTV 模型来自官方 CLI 的实时 provider catalog：
+
+```bash
+curl http://localhost:8080/v1/images/generations \
+  -H "Authorization: Bearer $SHORTDRAMA_ROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "libtv/lib-image-2",
+    "prompt": "一只绿色陶瓷杯放在浅灰桌面上，柔和自然光，无文字",
+    "size": "1024x1024",
+    "n": 1,
+    "provider_options": {
+      "settings": { "quality": "low", "resolution": "1K" }
+    }
+  }'
+```
+
 OpenAI 风格：
 
 ```bash
@@ -147,6 +174,11 @@ curl http://localhost:8080/api/v1/videos \
 ```
 
 实际模型和支持参数按服务查询，例如 `/api/v1/providers/xiaoyunque/models`。项目不提供把所有三方模型混在一起的全局 `/models` 列表。
+
+LibTV 与即梦都优先复用各自官方本地 CLI：
+
+- LibTV：在官网 **CLI & Skill** 页面安装 `libtv`，执行 `libtv login web --open`，并通过 `LIBTV_PROJECT_UUID` 指定生成节点所在画布；
+- 即梦：在官网 **即梦 CLI** 页面安装 `dreamina`，执行 `dreamina login`。即梦官方 CLI 当前仅向高级会员开放生成，普通 Web 登录仍可使用官网，但不会获得 CLI 生成权限。
 
 ## 服务与授权状态
 
@@ -175,8 +207,8 @@ curl http://localhost:8080/api/v1/videos \
 当前与首批目标包括：
 
 - `xiaoyunque/*`：已实现用户主动登录后创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频及音频参考、Seed Audio 语音/音效/音乐生成、本地 Web 会话授权、模型发现、授权状态、任务提交和轮询；
-- `libtv/*`：计划支持会话式视频创作、编辑和复杂 Agent 工作流；
-- `jimeng/*`：即梦图像、视频和编辑能力；
+- `libtv/*`：已通过官方 `libtv` CLI 接入实时模型发现、OAuth 本地状态、生图和生视频；每次生成在用户指定的 LibTV 画布中创建独立节点；
+- `jimeng/*`：已通过官方 `dreamina` CLI 接入 OAuth Device Flow、积分授权探测、图像与视频模型发现、异步提交和结果查询；
 - `kling/*`：可灵文生视频、图生视频、参考生成和视频编辑能力。
 
 接入优先级：官方 API Key / OAuth → 官方 access key → 用户本地授权会话。每个 adapter 对外声明自己的授权类型和支持能力。

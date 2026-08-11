@@ -7,10 +7,6 @@
   "include": ["src/**/*.ts"],
   "exclude": ["dist", "test"],
   "references": [
-    { "path": "../core" },
-    { "path": "../provider-jimeng" },
-    { "path": "../provider-libtv" },
-    { "path": "../provider-xiaoyunque" },
-    { "path": "../http" }
+    { "path": "../core" }
   ]
 }

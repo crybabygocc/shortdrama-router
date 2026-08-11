@@ -2,6 +2,8 @@
   "files": [],
   "references": [
     { "path": "./packages/core" },
+    { "path": "./packages/provider-jimeng" },
+    { "path": "./packages/provider-libtv" },
     { "path": "./packages/provider-xiaoyunque" },
     { "path": "./packages/http" },
     { "path": "./packages/sdk" }

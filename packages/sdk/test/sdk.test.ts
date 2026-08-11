@@ -10,12 +10,11 @@ function response(data: Record<string, unknown>, status = 200) {
   return Response.json(data, { status })
 }
 
-test("the aggregate package installs XiaoYunque before authorization", async () => {
+test("the aggregate package installs all built-in providers before authorization", async () => {
   const router = createShortDramaRouter()
   const providers = await router.listProviders()
-  assert.equal(providers.length, 1)
-  assert.equal(providers[0]?.id, "xiaoyunque")
-  assert.equal(providers[0]?.authorization.state, "not_configured")
+  assert.deepEqual(providers.map(provider => provider.id), ["jimeng", "libtv", "xiaoyunque"])
+  assert.equal(providers.find(provider => provider.id === "xiaoyunque")?.authorization.state, "not_configured")
   assert.ok((await router.listProviderModels("xiaoyunque")).length > 0)
 })
 

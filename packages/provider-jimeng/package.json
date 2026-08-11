@@ -1,11 +1,11 @@
 {
-  "name": "@shortdrama-router/provider-xiaoyunque",
+  "name": "@shortdrama-router/provider-jimeng",
   "version": "0.2.0",
-  "description": "XiaoYunque provider adapter for shortdrama-router",
+  "description": "Jimeng provider adapter for shortdrama-router",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
-  "files": ["dist/src"],
+  "files": ["dist/src", "README.md"],
   "publishConfig": {
     "access": "public"
   },

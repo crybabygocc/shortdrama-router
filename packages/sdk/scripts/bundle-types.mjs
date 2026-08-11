@@ -9,6 +9,8 @@ const typesRoot = path.join(packageRoot, "dist/bundle/types")
 const packages = {
   "@shortdrama-router/core": path.join(typesRoot, "vendor/core/index.js"),
   "@shortdrama-router/http": path.join(typesRoot, "vendor/http/index.js"),
+  "@shortdrama-router/provider-jimeng": path.join(typesRoot, "vendor/provider-jimeng/index.js"),
+  "@shortdrama-router/provider-libtv": path.join(typesRoot, "vendor/provider-libtv/index.js"),
   "@shortdrama-router/provider-xiaoyunque": path.join(typesRoot, "vendor/provider-xiaoyunque/index.js"),
 }
 
@@ -39,6 +41,14 @@ await rm(typesRoot, { force: true, recursive: true })
 await copyDeclarations(path.join(packageRoot, "dist/src"), typesRoot)
 await copyDeclarations(path.join(workspacePackages, "core/dist/src"), path.join(typesRoot, "vendor/core"))
 await copyDeclarations(path.join(workspacePackages, "http/dist/src"), path.join(typesRoot, "vendor/http"))
+await copyDeclarations(
+  path.join(workspacePackages, "provider-jimeng/dist/src"),
+  path.join(typesRoot, "vendor/provider-jimeng"),
+)
+await copyDeclarations(
+  path.join(workspacePackages, "provider-libtv/dist/src"),
+  path.join(typesRoot, "vendor/provider-libtv"),
+)
 await copyDeclarations(
   path.join(workspacePackages, "provider-xiaoyunque/dist/src"),
   path.join(typesRoot, "vendor/provider-xiaoyunque"),

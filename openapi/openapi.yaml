@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: shortdrama-router API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
     OpenAI/OpenRouter-style audio, image and video routing for short-drama creation
     platforms. Models and authorization are discovered per provider.
