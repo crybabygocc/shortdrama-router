@@ -1,6 +1,6 @@
 # OpenAI / OpenRouter 音频、图片与视频协议兼容性
 
-更新日期：2026-08-11
+更新日期：2026-08-18
 
 ## 结论
 
@@ -10,7 +10,7 @@
 
 1. 以 OpenRouter Video API 作为多 provider 主协议；
 2. 提供 OpenAI Videos API 兼容入口，覆盖其已有标准能力；
-3. provider 的高级参数使用 OpenRouter 已定义的 `provider.options`；
+3. provider 的高级参数使用当前公共层的 `provider_options`；
 4. 费用只映射现有 `usage`，没有可靠来源时直接省略；
 5. 会员余额、积分预估和账号管理不进入核心生成协议。
 
@@ -41,7 +41,7 @@ OpenAI 当前已经提供独立的视频资源，而不是通过 `/chat/completi
 
 基础创建字段包括 `model`、`prompt`、`input_reference`、`seconds` 和 `size`，返回统一的 `video` 任务对象及 `queued / in_progress / completed / failed` 状态。
 
-因此，如果 `shortdrama-router` 严格保持请求 Content-Type、字段、状态、错误和下载响应，现有 OpenAI 客户端只需要替换 `base_url`、API Key 和模型名即可复用。
+`shortdrama-router` 当前实现创建和查询路径，并为创建请求提供幂等语义；尚未实现内容下载、列表、edit、extend、remix 和 characters。因此兼容性必须按已实现端点声明，不能仅凭路径相似宣称完整 OpenAI Videos 兼容。
 
 ## OpenAI 协议覆盖不了什么
 
@@ -54,8 +54,8 @@ OpenAI 当前创建接口是为自身视频模型定义的，不是完整的多 
 | 时长、尺寸 | `seconds`、`size` | 映射到 provider 支持值，不静默降级 |
 | 多参考素材 | 没有通用数组 | 使用 OpenRouter `input_references` |
 | 首尾帧 | 没有通用字段 | 使用 OpenRouter `frame_images` |
-| 原生音频开关 | 没有通用字段 | 使用 OpenRouter `generate_audio` |
-| provider 特有参数 | 没有通用容器 | 使用 OpenRouter `provider.options` |
+| 原生音频开关 | 没有通用字段 | 当前不提供统一字段，由具体模型能力声明 |
+| provider 特有参数 | 没有通用容器 | 使用 `provider_options` |
 | 多 provider 模型发现 | 通用 `/v1/models` 信息不足 | 先查询 `/api/v1/providers`，再使用 `/api/v1/providers/{provider}/models` |
 | 第三方积分与余额 | 没有标准字段 | 不加入核心协议 |
 
@@ -67,7 +67,7 @@ OpenRouter Video API 已经是面向多模型和多 provider 的异步视频协�
 - 首帧 / 尾帧 `frame_images`；
 - 图片、音频、视频等 `input_references`；
 - `generate_audio`、`seed` 和 `callback_url`；
-- `provider.options` 受控透传 provider 特有字段；
+- provider 特有字段需要受控、带 schema 的透传容器；
 - 视频模型接口返回支持的分辨率、宽高比、价格 SKU 和允许透传的参数；
 - 任务完成后可返回 `usage.cost`。
 
@@ -77,14 +77,14 @@ OpenRouter Video API 已经是面向多模型和多 provider 的异步视频协�
 
 “兼容”应按接口逐项声明：
 
-- `openai-videos-core`：创建、查询、下载；
+- `openai-videos-create-query`：创建、查询；
 - `router-audio-async`：通用音频生成的创建与查询；
 - `openai-images-generation`：同步文生图并返回 URL；
 - `router-images-async`：异步生图创建与查询；
 - `openai-videos-edit`：编辑；
 - `openai-videos-extend`：续写；
 - `openai-videos-remix`：重混；
-- `openrouter-video-core`：创建、查询和下载；
+- `openrouter-video-core`：创建、查询；
 - `provider-discovery`：服务发现、授权状态和单服务模型查询；
 - `openrouter-video-references`：首尾帧与多参考素材；
 - `openrouter-video-provider-options`：受控原生参数透传。

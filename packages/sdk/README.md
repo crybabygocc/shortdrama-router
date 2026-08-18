@@ -41,11 +41,15 @@ const router = createShortDramaRouter({
   },
 })
 
-const providers = await router.listProviders({ probeAuthorization: true })
+const providers = await router.listProviders({
+  probeAuthorization: true,
+  probeConfiguration: true,
+  probeDependencies: true,
+})
 const models = await router.listProviderModels("libtv")
 const handle = createRouterHttpHandler(router)
 ```
 
-The server exposes asynchronous general audio jobs under `/api/v1/audio`, synchronous OpenAI-compatible image generation at `POST /v1/images/generations`, asynchronous image jobs under `/api/v1/images`, and asynchronous video jobs under `/v1/videos` and `/api/v1/videos`. General audio generation is not presented as OpenAI text-to-speech.
+The server exposes asynchronous general audio jobs under `/api/v1/audio`, synchronous OpenAI-compatible image generation at `POST /v1/images/generations`, asynchronous image jobs under `/api/v1/images`, and asynchronous video jobs under `/v1/videos` and `/api/v1/videos`. Creation routes accept `Idempotency-Key`. General audio generation is not presented as OpenAI text-to-speech.
 
 `createShortDramaRouter()` installs the Jimeng, LibTV and XiaoYunque adapters even when they have no credentials. This lets applications show supported services and their authorization state before login. Jimeng and LibTV credentials remain managed by their official local CLIs.

@@ -6,7 +6,7 @@
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：`0.2.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型发现、授权状态、本地 HTTP 服务和 npm 聚合包。
+> 当前状态：`0.3.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型与依赖发现、分方式授权状态、配置就绪状态、本地 HTTP 服务和 npm 聚合包。
 
 ## 为什么使用 shortdrama-router
 
@@ -28,12 +28,11 @@ OpenRouter 的视频接口更适合多模型路由。项目沿用它的多 provi
 - `GET /api/v1/audio/{id}` 查询音频状态和结果；
 - `POST /api/v1/videos` 按 OpenRouter 风格提交异步视频任务；
 - `GET /api/v1/videos/{id}` 查询状态；
-- `GET /api/v1/videos/{id}/content` 下载结果；
 - `GET /api/v1/providers` 查询已支持服务及其授权状态；
 - `GET /api/v1/providers/{provider}/models` 单独查询某个服务的模型和能力；
-- `duration`、`resolution`、`aspect_ratio`、`frame_images`、`input_references`、`generate_audio`；
-- `provider.options` 传递 provider 特有参数；
-- provider 能提供费用时，在完成结果中返回 `usage`。
+- `duration`、`resolution`、`aspect_ratio`、`frame_images`、`input_references`；
+- `provider_options` 传递 provider 特有参数；
+- `Idempotency-Key` 防止调用方重试造成重复提交。
 
 ### OpenAI 风格：兼容协议
 
@@ -42,7 +41,6 @@ OpenRouter 的视频接口更适合多模型路由。项目沿用它的多 provi
 - `POST /v1/images/generations`：同步等待并返回图片 URL；
 - `POST /v1/videos`；
 - `GET /v1/videos/{id}`；
-- `GET /v1/videos/{id}/content`；
 - 逐步兼容 edit、extend 和 remix 等标准视频操作。
 
 这样现有 OpenAI 客户端可以通过修改 `base_url` 和 `model` 尽量直接复用。Seed Audio 同时覆盖语音、音效和音乐设计，不等同于文字转语音，因此使用异步音频任务接口；OpenAI 当前没有表达的多参考图、首尾帧、通用音频生成和 provider 参数，使用 OpenRouter 风格接口，不强塞进 OpenAI 对象。
@@ -79,7 +77,11 @@ const router = createShortDramaRouter({
   },
 })
 
-const providers = await router.listProviders({ probeAuthorization: true })
+const providers = await router.listProviders({
+  probeAuthorization: true,
+  probeConfiguration: true,
+  probeDependencies: true,
+})
 const models = await router.listProviderModels("xiaoyunque")
 const handle = createRouterHttpHandler(router)
 ```
@@ -115,6 +117,8 @@ curl http://localhost:8080/api/v1/audio \
 ```
 
 创建成功后，通过 `GET /api/v1/audio/{id}` 查询任务。小云雀 Seed Audio 目前是漫剧画布能力，要求用户在本机授权 `browser_session`；Access Key 仍优先用于其已支持的生图和生视频 API。
+
+建议为创建请求设置 `Idempotency-Key`。同一个键和同一个规范化请求会返回原任务；同一个键对应不同请求时返回 `idempotency_conflict`。默认内存任务存储只保证当前进程内幂等，生产环境需要注入支持原子 `claim` / `compareAndSet` 的持久化 store。
 
 OpenAI 风格生图：
 
@@ -185,9 +189,14 @@ LibTV 与即梦都优先复用各自官方本地 CLI：
 - `GET /api/v1/providers`：查询所有已安装 provider；
 - `GET /api/v1/providers?probe=true`：同时实时验证可验证的授权；
 - `GET /api/v1/providers/{provider}/authorization`：查询单个服务授权状态；
+- `GET /api/v1/providers/{provider}/authorizations`：分别查询 API Key、OAuth、浏览器会话等授权方式；
 - `POST /api/v1/providers/{provider}/authorization`：开始该服务支持的交互式授权；
 - `PUT /api/v1/providers/{provider}/authorization`：在本机完成授权；
+- `DELETE /api/v1/providers/{provider}/authorization-requests/{id}`：取消未完成的授权流程；
 - `DELETE /api/v1/providers/{provider}/authorization`：清除本地授权；
+- `DELETE /api/v1/providers/{provider}/authorizations/{method}`：只清除一种授权方式；
+- `GET /api/v1/providers/{provider}/resources`：发现项目、画布等可选资源；
+- `GET|PUT|DELETE /api/v1/providers/{provider}/configuration`：查询、选择或清除运行配置；
 - `GET /api/v1/providers/{provider}/models`：只查询该服务的模型。
 
 授权状态包括 `not_configured`、`configured`、`valid`、`expiring`、`expired` 和 `error`。无法可靠验证时保持 `configured`，不会猜测为有效。
@@ -207,9 +216,9 @@ LibTV 与即梦都优先复用各自官方本地 CLI：
 当前与首批目标包括：
 
 - `xiaoyunque/*`：已实现用户主动登录后创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频及音频参考、Seed Audio 语音/音效/音乐生成、本地 Web 会话授权、模型发现、授权状态、任务提交和轮询；
-- `libtv/*`：已通过官方 `libtv` CLI 接入实时模型发现、OAuth 本地状态、生图和生视频；每次生成在用户指定的 LibTV 画布中创建独立节点；
+- `libtv/*`：已通过官方 `libtv` CLI 接入实时模型发现、OAuth 本地状态、项目发现与选择、生图和生视频；每次生成在用户选择的 LibTV 项目中创建独立节点；
 - `jimeng/*`：已通过官方 `dreamina` CLI 接入 OAuth Device Flow、积分授权探测、图像与视频模型发现、异步提交和结果查询；
-- `kling/*`：可灵文生视频、图生视频、参考生成和视频编辑能力。
+- `kling/*`：路线图，尚未包含在当前 npm 版本中。
 
 接入优先级：官方 API Key / OAuth → 官方 access key → 用户本地授权会话。每个 adapter 对外声明自己的授权类型和支持能力。
 
@@ -232,6 +241,8 @@ LibTV 与即梦都优先复用各自官方本地 CLI：
 本项目不会托管、转售或赠送第三方账号及额度，也不保证非公开接口长期可用。用户必须只连接自己有权使用的账号和凭证，并自行遵守 provider 服务条款、当地法律、内容审核、知识产权、肖像权、隐私保护、生成内容标识和商业使用要求。
 
 OpenAI-compatible / OpenRouter-compatible 仅描述接口形态，不代表官方认证，也不保证覆盖对应 API 的每个字段。
+
+默认实现不会代替用户判断账号权益、用途授权或生成内容许可。持久化任务 store 可能包含提示词、provider 参数和素材引用；宿主应用负责加密、保留期限与删除策略，且不得把凭证或本地路径写入任务记录。
 
 ## 非目标
 

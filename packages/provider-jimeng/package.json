@@ -1,6 +1,6 @@
 {
   "name": "@shortdrama-router/provider-jimeng",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Jimeng provider adapter for shortdrama-router",
   "type": "module",
   "license": "MIT",
@@ -16,7 +16,7 @@
     }
   },
   "dependencies": {
-    "@shortdrama-router/core": "0.2.0"
+    "@shortdrama-router/core": "0.3.0"
   },
   "scripts": {
     "build": "tsc -b --pretty false",

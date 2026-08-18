@@ -2,7 +2,7 @@
 
 XiaoYunque adapter for `shortdrama-router`.
 
-Credential priority is official Access Key first, then a user-authorized local Web session. Credentials come from an injected credential source; the package does not send them to a remote router or persist them by default.
+Credential priority is a valid official Access Key first, then a user-authorized local Web session. Both methods have independent status and clearing operations, so an expired Access Key does not hide a valid Web session. Credentials come from an injected credential source; the package does not send them to a remote router or persist them by default.
 
 For the default interactive flow, call `beginAuthorization("api_key")`, open the returned official login URL in a host-managed local browser, and return only the requested cookies with the exact `cookie_origin`. `completeAuthorization(...)` uses that temporary session to create an Access Key through XiaoYunque's Web API, saves the AK with `setAccessKey`, and discards the cookies. Users do not need to locate or paste an AK. The default lifetime is 30 days; `accessKeyEnrollment.lifetimeDays` accepts `7`, `30`, `90`, or `365`.
 

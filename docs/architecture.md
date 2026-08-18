@@ -31,10 +31,12 @@ Each provider implements `ProviderAdapter`:
 - metadata and capability discovery;
 - authorization status and optional authorization lifecycle;
 - provider-scoped model listing;
-- normalized image/video creation and polling;
+- normalized audio/image/video creation and polling;
 - translation between normalized requests and native upstream contracts.
 
-The router owns public job IDs and stores provider job references behind a `VideoJobStore`. This keeps upstream run IDs and credential bindings out of public responses and makes persistent storage replaceable later.
+The router owns public job IDs and stores provider job references behind media-specific job stores. The built-in memory stores provide atomic request claiming and compare-and-set updates for one process. A production host can inject durable stores; idempotency fails closed when a custom store cannot atomically claim a key.
+
+The router claims a job before provider submission. If upstream acceptance cannot be confirmed, the job becomes `submission_unknown` and is never automatically resubmitted. Polling uses guarded state transitions so a late provider response cannot overwrite a terminal job.
 
 ## Discovery instead of a global model list
 
@@ -48,13 +50,16 @@ HTTP clients use:
 - `GET /api/v1/providers`;
 - `GET /api/v1/providers/{provider}`;
 - `GET /api/v1/providers/{provider}/authorization`;
+- `GET /api/v1/providers/{provider}/authorizations`;
+- `GET /api/v1/providers/{provider}/configuration`;
+- `GET /api/v1/providers/{provider}/resources`;
 - `GET /api/v1/providers/{provider}/models`.
 
 There is no global `/models` endpoint. Provider catalogs can change independently and can expose different metadata without lossy normalization.
 
 ## XiaoYunque authorization
 
-The XiaoYunque adapter chooses credentials in this order:
+The XiaoYunque adapter evaluates its two credential methods independently and chooses a usable credential in this order:
 
 1. official Access Key;
 2. user-authorized local Web session.
@@ -71,6 +76,8 @@ The Jimeng and LibTV adapters execute their official local CLIs as argument arra
 
 Jimeng maps router image/video jobs to the official `dreamina` asynchronous submit and query commands. LibTV maps jobs to uniquely named image/video nodes on a configured user canvas and waits for the official `libtv node --run` terminal JSON. Neither adapter estimates credits when the official command output does not supply a stable per-request estimate.
 
-## Media references
+## Media references and artifacts
 
-The first implementation accepts XiaoYunque/Pippit provider asset identities. Automatic URL downloading is deliberately outside the provider adapter because it needs an explicit SSRF, size and MIME policy. A future media-preparation package can upload bounded local or remote inputs before provider submission without changing the provider contract.
+Public references use provider-neutral `{ provider, id, kind? }` identities. Legacy XiaoYunque/Pippit fields remain accepted for one compatibility window inside its adapter. Automatic URL downloading and local-path ingestion are deliberately unsupported because they require explicit SSRF, size, MIME and lifecycle policies.
+
+Completed jobs expose typed `artifacts` with `kind`, canonical `media_type` and a validated URL. Legacy `outputs` remain available as a compatibility bridge.

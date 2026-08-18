@@ -1,9 +1,12 @@
 {
   "name": "shortdrama-router",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "OpenAI/OpenRouter-style audio, image and video router for short-drama services",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "sideEffects": false,
   "bin": {
     "shortdrama-router": "dist/bundle/cli.js"
@@ -19,12 +22,20 @@
     }
   },
   "devDependencies": {
-    "@shortdrama-router/core": "0.2.0",
-    "@shortdrama-router/http": "0.2.0",
-    "@shortdrama-router/provider-jimeng": "0.2.0",
-    "@shortdrama-router/provider-libtv": "0.2.0",
-    "@shortdrama-router/provider-xiaoyunque": "0.2.0"
+    "@shortdrama-router/core": "0.3.0",
+    "@shortdrama-router/http": "0.3.0",
+    "@shortdrama-router/provider-jimeng": "0.3.0",
+    "@shortdrama-router/provider-libtv": "0.3.0",
+    "@shortdrama-router/provider-xiaoyunque": "0.3.0"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/crybabygocc/shortdrama-router.git"
+  },
+  "bugs": {
+    "url": "https://github.com/crybabygocc/shortdrama-router/issues"
+  },
+  "homepage": "https://github.com/crybabygocc/shortdrama-router#readme",
   "scripts": {
     "build": "tsc -b --pretty false && node scripts/bundle-runtime.mjs && node scripts/bundle-types.mjs",
     "prepack": "npm run build",
