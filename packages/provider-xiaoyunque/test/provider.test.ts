@@ -385,3 +385,53 @@ test("uses a local Web session when no Access Key is configured", async () => {
   assert.equal(completed.status, "completed")
   assert.equal(completed.outputs?.[0]?.url, "http://127.0.0.1:8787/web-video.mp4")
 })
+
+test("reports and clears authorization methods independently", async () => {
+  const credentials = new MemoryXiaoYunqueCredentials({
+    access_key: "ak-local",
+    web_session: {
+      authorized_at: "2026-08-05T00:00:00.000Z",
+      cookies: [{ name: "sessionid_pippitcn_web", value: "local-session" }],
+    },
+  })
+  const provider = new XiaoYunqueProvider({ credentials })
+  const overview = await provider.getAuthorizationStatuses()
+  assert.deepEqual(overview.methods.map(item => [item.method, item.state]), [
+    ["api_key", "configured"],
+    ["browser_session", "configured"],
+  ])
+  await provider.clearAuthorizationMethod("api_key")
+  const snapshot = await credentials.read()
+  assert.equal(snapshot.access_key, undefined)
+  assert.equal(snapshot.web_session?.cookies[0]?.value, "local-session")
+})
+
+test("falls back to a browser session when the Access Key has locally expired", async () => {
+  const provider = new XiaoYunqueProvider({
+    baseUrl: "http://127.0.0.1:8787",
+    credentials: new MemoryXiaoYunqueCredentials({
+      access_key: "ak-expired",
+      access_key_expires_at: "2026-08-04T00:00:00.000Z",
+      web_session: {
+        authorized_at: "2026-08-05T00:00:00.000Z",
+        cookies: [{ name: "sessionid_pippitcn_web", value: "valid-session" }],
+      },
+    }),
+    fetch: async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString())
+      assert.equal(new Headers(init?.headers).get("authorization"), null)
+      if (url.pathname.endsWith("/get_odin_user_info")) return response({ ret: 0, data: { user_id: "user-1" } })
+      if (url.pathname.endsWith("/get_user_workspace")) {
+        return response({ ret: 0, data: { space_id: "space-1", workspace_id: "workspace-1" } })
+      }
+      if (url.pathname.endsWith("/submit_run")) return response({ ret: 0, data: {} })
+      throw new Error(`unexpected path ${url.pathname}`)
+    },
+    now: () => new Date("2026-08-05T00:00:00.000Z"),
+  })
+  const created = await provider.createVideo({
+    model: "xiaoyunque/seedance-2.0-mini-lite",
+    prompt: "A local session scene",
+  })
+  assert.equal(created.reference.transport, "browser_session")
+})

@@ -25,6 +25,8 @@ export interface XiaoYunqueCredentialSnapshot {
 
 export interface XiaoYunqueCredentialSource {
   clear?(): Promise<void>
+  clearAccessKey?(): Promise<void>
+  clearWebSession?(): Promise<void>
   read(): Promise<XiaoYunqueCredentialSnapshot>
   setAccessKey?(accessKey: string, expiresAt?: string): Promise<void>
   setWebSession?(session: XiaoYunqueWebSession): Promise<void>
@@ -109,6 +111,16 @@ export class MemoryXiaoYunqueCredentials implements XiaoYunqueCredentialSource {
 
   async clear() {
     this.#snapshot = {}
+  }
+
+  async clearAccessKey() {
+    const { access_key: _accessKey, access_key_expires_at: _accessKeyExpiry, ...rest } = this.#snapshot
+    this.#snapshot = rest
+  }
+
+  async clearWebSession() {
+    const { web_session: _webSession, ...rest } = this.#snapshot
+    this.#snapshot = rest
   }
 }
 

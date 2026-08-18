@@ -22,6 +22,7 @@ class FakeRunner implements JimengCommandRunner {
 
   async run(args: readonly string[]) {
     this.calls.push([...args])
+    if (args[0] === "--version") return { stdout: "dreamina test-version" }
     if (args[0] === "user_credit") {
       return { stdout: JSON.stringify({ total_credit: 37, vip_level: "advanced" }) }
     }
@@ -105,4 +106,12 @@ test("reports Jimeng as not configured before local OAuth state exists", async (
   await rm(configDir, { recursive: true })
   const provider = new JimengProvider({ configDir, runner: new FakeRunner() })
   assert.equal((await provider.getAuthorizationStatus()).state, "not_configured")
+})
+
+test("describes the Dreamina dependency without inventing compatibility evidence", async () => {
+  const provider = new JimengProvider({ runner: new FakeRunner() })
+  const dependency = (await provider.getDependencyStatuses({ probe: true }))[0]
+  assert.equal(dependency?.available, true)
+  assert.equal(dependency?.compatible, null)
+  assert.equal(dependency?.version, "dreamina test-version")
 })

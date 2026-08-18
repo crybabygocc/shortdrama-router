@@ -102,6 +102,18 @@ function cleanFailure(value: unknown) {
   return normalized.length > 0 && normalized.length <= 500 ? normalized : "Jimeng generation failed"
 }
 
+function mediaType(kind: "image" | "video", url: string) {
+  const pathname = new URL(url).pathname.toLowerCase()
+  if (kind === "image") {
+    if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "image/jpeg"
+    if (pathname.endsWith(".png")) return "image/png"
+    return "image/webp"
+  }
+  if (pathname.endsWith(".webm")) return "video/webm"
+  if (pathname.endsWith(".mov")) return "video/quicktime"
+  return "video/mp4"
+}
+
 function jobResult(kind: "image" | "video", value: unknown) {
   const result = record(value)
   const submitId = result?.submit_id
@@ -119,7 +131,7 @@ function jobResult(kind: "image" | "video", value: unknown) {
     : /\.(?:m4v|mov|mp4|webm)$/iu
   const urls = [...new Set(mediaUrls(result).filter(url => mediaPattern.test(new URL(url).pathname)))]
   const outputs = urls.map(url => ({
-    content_type: kind === "image" ? "image/webp" : "video/mp4",
+    content_type: mediaType(kind, url),
     url,
   }))
   if (status === "completed" && outputs.length === 0) {
@@ -162,10 +174,25 @@ export class JimengProvider implements ProviderAdapter {
   readonly metadata = {
     capabilities: {
       authorization: ["oauth"],
+      authorization_methods: [{
+        actions: ["status", "begin", "complete", "cancel", "clear"],
+        management: "managed",
+        method: "oauth",
+      }],
+      cancellation: [],
       generation: ["image", "video"],
+      ingestion: [],
       models: true,
       usage: false,
     },
+    contract_version: "2026-08-18",
+    dependencies: [{
+      executable: "dreamina",
+      id: "dreamina-cli",
+      kind: "executable",
+      required: true,
+      version_command: ["--version"],
+    }],
     description: "Jimeng image and video generation through the official local Dreamina CLI.",
     id: "jimeng",
     name: "Jimeng",
@@ -192,6 +219,7 @@ export class JimengProvider implements ProviderAdapter {
         configured: false,
         method: null,
         reason: "authorize with the official Dreamina CLI",
+        reason_code: "authorization_not_configured",
         state: "not_configured",
       } as const
     }
@@ -208,6 +236,7 @@ export class JimengProvider implements ProviderAdapter {
         method: "oauth",
         ...(planUnsupported ? {
           reason: "authorized, but official CLI generation requires an Advanced membership",
+          reason_code: "plan_generation_unsupported",
         } : {}),
         state: "valid",
         verified_at: this.#now().toISOString(),
@@ -219,6 +248,7 @@ export class JimengProvider implements ProviderAdapter {
           configured: true,
           method: "oauth",
           reason: "Jimeng rejected the locally stored OAuth login",
+          reason_code: "authorization_rejected",
           state: "expired",
           verified_at: this.#now().toISOString(),
         } as const
@@ -277,9 +307,34 @@ export class JimengProvider implements ProviderAdapter {
     return this.getAuthorizationStatus({ probe: true, ...(signal === undefined ? {} : { signal }) })
   }
 
+  async cancelAuthorization(authorizationId: string) {
+    if (!this.#pending || this.#pending.id !== authorizationId) {
+      throw new JimengInputError("Jimeng authorization request was not found")
+    }
+    this.#pending = undefined
+  }
+
   async clearAuthorization(signal?: AbortSignal) {
     await this.#runner.run(["logout"], signal)
     this.#pending = undefined
+  }
+
+  async getDependencyStatuses(options: { readonly probe?: boolean; readonly signal?: AbortSignal } = {}) {
+    const dependency = this.metadata.dependencies[0]
+    if (!options.probe) return [{ ...dependency, available: null, compatible: null, reason_code: "dependency_unprobed" }] as const
+    try {
+      const result = await this.#runner.run(dependency.version_command, options.signal)
+      const version = result.stdout.trim().slice(0, 256)
+      return [{ ...dependency, available: true, compatible: null, ...(version ? { version } : {}) }] as const
+    } catch {
+      return [{
+        ...dependency,
+        available: false,
+        compatible: null,
+        reason: "the official Dreamina CLI is unavailable or its version could not be read",
+        reason_code: "dependency_unavailable",
+      }] as const
+    }
   }
 
   async listModels(options: { readonly signal?: AbortSignal } = {}) {
@@ -289,6 +344,12 @@ export class JimengProvider implements ProviderAdapter {
       capabilities: {
         aspect_ratios: imageRatios,
         authorization: ["oauth"],
+        constraints: {
+          aspect_ratio: { kind: "enum", values: imageRatios },
+          resolution: { kind: "enum", values: imageResolutions(version) },
+        },
+        output_media_types: ["image/jpeg", "image/png", "image/webp"],
+        references: { image: false },
         resolutions: imageResolutions(version),
       },
       description: `${publicName("image", version)} through the official Dreamina CLI.`,
@@ -303,7 +364,14 @@ export class JimengProvider implements ProviderAdapter {
         capabilities: {
           aspect_ratios: videoRatios,
           authorization: ["oauth"],
+          constraints: {
+            aspect_ratio: { kind: "enum", values: videoRatios },
+            duration: { kind: "range", min: 4, max: maximumDuration, step: 1 },
+            resolution: { kind: "enum", values: videoResolutions(version) },
+          },
           durations: Array.from({ length: maximumDuration - 3 }, (_, index) => index + 4),
+          output_media_types: ["video/mp4", "video/quicktime", "video/webm"],
+          references: { audio: false, first_frame: false, image: false, last_frame: false, video: false },
           resolutions: videoResolutions(version),
         },
         description: `${publicName("video", version)} through the official Dreamina CLI.`,

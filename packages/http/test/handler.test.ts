@@ -26,10 +26,10 @@ const provider: ProviderAdapter = {
     return { authorized: true, configured: true, method: "api_key", state: "valid" }
   },
   async getVideo(reference) {
-    return { outputs: [{ url: "https://example.com/video.mp4" }], reference, status: "completed" }
+    return { outputs: [{ content_type: "video/mp4", url: "https://example.com/video.mp4" }], reference, status: "completed" }
   },
   async getImage(reference) {
-    return { outputs: [{ url: "https://example.com/image.png" }], reference, status: "completed" }
+    return { outputs: [{ content_type: "image/png", url: "https://example.com/image.png" }], reference, status: "completed" }
   },
   async getAudio(reference) {
     return { outputs: [{ content_type: "audio/mpeg", url: "https://media.example/speech.mp3" }], reference, status: "completed" }
@@ -130,4 +130,59 @@ test("creates and polls an asynchronous audio job", async () => {
   assert.equal((await response.json() as { id: string }).id, "audio-job-1")
   const completed = await handle(new Request("http://router.local/api/v1/audio/audio-job-1"))
   assert.equal((await completed.json() as { status: string }).status, "completed")
+})
+
+test("uses Idempotency-Key for replay and returns structured conflicts", async () => {
+  let submissions = 0
+  const adapter: ProviderAdapter = {
+    ...provider,
+    async createVideo() {
+      submissions += 1
+      return { reference: { remote: "one" }, status: "queued" }
+    },
+  }
+  let sequence = 0
+  const handle = createRouterHttpHandler(new ShortDramaRouter({
+    providers: [adapter],
+    randomId: () => `job-${++sequence}`,
+  }))
+  const create = (prompt: string) => handle(new Request("http://router.local/api/v1/videos", {
+    body: JSON.stringify({ model: "test-provider/video-1", prompt }),
+    headers: { "Content-Type": "application/json", "Idempotency-Key": "request-one" },
+    method: "POST",
+  }))
+  const first = await create("A short scene")
+  const replay = await create("A short scene")
+  assert.equal((await replay.json() as { id: string }).id, (await first.json() as { id: string }).id)
+  assert.equal(submissions, 1)
+  const conflict = await create("A different scene")
+  assert.equal(conflict.status, 409)
+  assert.deepEqual(await conflict.json(), {
+    error: {
+      category: "conflict",
+      code: "idempotency_conflict",
+      message: "idempotency key was already used with a different request",
+      retryable: false,
+    },
+  })
+})
+
+test("exposes method-scoped authorization and stable unsupported cancellation", async () => {
+  const handle = createRouterHttpHandler(new ShortDramaRouter({ providers: [provider], randomId: () => "job-cancel" }))
+  const authorizations = await handle(new Request("http://router.local/api/v1/providers/test-provider/authorizations"))
+  assert.equal((await authorizations.json() as { methods: unknown[] }).methods.length, 1)
+  await handle(new Request("http://router.local/api/v1/videos", {
+    body: JSON.stringify({ model: "test-provider/video-1", prompt: "A short scene" }),
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  }))
+  const cancelled = await handle(new Request("http://router.local/api/v1/videos/job-cancel", { method: "DELETE" }))
+  assert.equal(cancelled.status, 409)
+  const body = await cancelled.json() as { error: { category: string; code: string; retryable: boolean } }
+  assert.deepEqual(body.error, {
+    category: "unsupported",
+    code: "cancellation_unsupported",
+    message: "provider test-provider does not support video cancellation",
+    retryable: false,
+  })
 })

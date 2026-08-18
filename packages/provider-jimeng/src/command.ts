@@ -42,6 +42,9 @@ export class JimengProcessRunner implements JimengCommandRunner {
   readonly #timeoutMs: number
 
   constructor(options: JimengProcessRunnerOptions = {}) {
+    if (options.cliPath !== undefined && !path.isAbsolute(options.cliPath)) {
+      throw new Error("Dreamina CLI path must be absolute")
+    }
     this.#cliPath = options.cliPath ?? defaultCliPath()
     this.#maxOutputBytes = options.maxOutputBytes ?? 8 * 1024 * 1024
     this.#timeoutMs = options.timeoutMs ?? 30 * 60_000

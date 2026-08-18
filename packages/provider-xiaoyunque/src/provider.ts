@@ -5,6 +5,7 @@ import type {
   ImageCreateRequest,
   ProviderAdapter,
   ProviderAuthorizationCompletion,
+  ProviderAuthorizationOverview,
   ProviderAuthorizationStatus,
   ProviderAudioJobResult,
   ProviderVideoJobResult,
@@ -93,6 +94,7 @@ function status(
   options: {
     readonly expiresAt?: number
     readonly reason?: string
+    readonly reasonCode?: string
     readonly verifiedAt?: string
   } = {},
 ): ProviderAuthorizationStatus {
@@ -103,6 +105,7 @@ function status(
     state,
     ...(options.expiresAt === undefined ? {} : { expires_at: new Date(options.expiresAt).toISOString() }),
     ...(options.reason === undefined ? {} : { reason: options.reason }),
+    ...(options.reasonCode === undefined ? {} : { reason_code: options.reasonCode }),
     ...(options.verifiedAt === undefined ? {} : { verified_at: options.verifiedAt }),
   }
 }
@@ -111,10 +114,17 @@ export class XiaoYunqueProvider implements ProviderAdapter {
   readonly metadata = {
     capabilities: {
       authorization: ["api_key", "browser_session"],
+      authorization_methods: [
+        { actions: ["status", "begin", "complete", "cancel", "clear"], management: "managed", method: "api_key" },
+        { actions: ["status", "begin", "complete", "cancel", "clear"], management: "managed", method: "browser_session" },
+      ],
+      cancellation: [],
       generation: ["audio", "image", "video"],
+      ingestion: [],
       models: true,
       usage: false,
     },
+    contract_version: "2026-08-18",
     description: "XiaoYunque short-drama audio, image and video generation service.",
     id: "xiaoyunque",
     name: "XiaoYunque",
@@ -148,58 +158,99 @@ export class XiaoYunqueProvider implements ProviderAdapter {
 
   async getAuthorizationStatus(options: { readonly probe?: boolean; readonly signal?: AbortSignal } = {}) {
     const snapshot = await this.#credentials.read()
-    const selected = this.#selectedCredential(snapshot)
-    if (!selected) return status("not_configured", null)
-    const expiry = selected.credential.mode === "api_key" && snapshot.access_key_expires_at
+    const overview = await this.#authorizationStatuses(snapshot, options)
+    const effective = overview.methods.find(item => item.method === overview.effective_method)
+    return effective ?? status("not_configured", null, {
+      reason: "configure an Access Key or local browser session",
+      reasonCode: "authorization_required",
+    })
+  }
+
+  async getAuthorizationStatuses(options: { readonly probe?: boolean; readonly signal?: AbortSignal } = {}) {
+    return this.#authorizationStatuses(await this.#credentials.read(), options)
+  }
+
+  async #authorizationStatuses(
+    snapshot: XiaoYunqueCredentialSnapshot,
+    options: { readonly probe?: boolean; readonly signal?: AbortSignal },
+  ): Promise<ProviderAuthorizationOverview> {
+    const methods = [] as ProviderAuthorizationStatus[]
+    for (const mode of ["api_key", "browser_session"] as const) {
+      methods.push(await this.#authorizationStatusFor(snapshot, mode, options))
+    }
+    const effective = methods.find(item => item.state === "valid" || item.state === "expiring")
+      ?? methods.find(item => item.state === "configured")
+      ?? methods.find(item => item.configured)
+    return { effective_method: effective?.method ?? null, methods }
+  }
+
+  async #authorizationStatusFor(
+    snapshot: XiaoYunqueCredentialSnapshot,
+    mode: "api_key" | "browser_session",
+    options: { readonly probe?: boolean; readonly signal?: AbortSignal },
+  ) {
+    const selected = this.#credentialForMode(snapshot, mode, false)
+    if (!selected) return status("not_configured", mode, {
+      reason: mode === "api_key" ? "Access Key is not configured" : "local browser session is not configured",
+      reasonCode: "authorization_not_configured",
+    })
+    const expiry = mode === "api_key" && snapshot.access_key_expires_at
       ? new Date(snapshot.access_key_expires_at).getTime()
-      : selected.credential.mode === "browser_session" && snapshot.web_session
+      : mode === "browser_session" && snapshot.web_session
         ? webSessionExpiry(snapshot.web_session)
         : undefined
     if (expiry !== undefined && expiry <= this.#now().getTime()) {
-      return status("expired", selected.credential.mode, {
+      return status("expired", mode, {
         expiresAt: expiry,
-        reason: selected.credential.mode === "api_key"
+        reason: mode === "api_key"
           ? "the locally recorded Access Key lifetime has ended"
           : "local Web session cookies have expired",
+        reasonCode: "authorization_expired",
       })
     }
     if (options.probe) {
       try {
         await selected.transport.probe(selected.credential, options.signal)
-        this.#observe(selected.credential.mode, "valid")
+        this.#observe(mode, "valid")
       } catch (error) {
         if (error instanceof XiaoYunqueAuthenticationError) {
-          this.#observe(selected.credential.mode, "expired", safeReason(error))
+          this.#observe(mode, "expired", safeReason(error))
         } else if (options.signal?.aborted) {
           throw error
         } else {
-          this.#observe(selected.credential.mode, "error", safeReason(error))
+          this.#observe(mode, "error", safeReason(error))
         }
       }
     }
-    const observation = this.#observations.get(selected.credential.mode)
+    const observation = this.#observations.get(mode)
     if (observation?.state === "expired") {
-      return status("expired", selected.credential.mode, {
+      return status("expired", mode, {
         ...(expiry === undefined ? {} : { expiresAt: expiry }),
         ...(observation.reason === undefined ? {} : { reason: observation.reason }),
+        reasonCode: "authorization_rejected",
         verifiedAt: observation.verifiedAt,
       })
     }
     if (observation?.state === "error") {
-      return status("error", selected.credential.mode, {
+      return status("error", mode, {
         ...(expiry === undefined ? {} : { expiresAt: expiry }),
         ...(observation.reason === undefined ? {} : { reason: observation.reason }),
+        reasonCode: "authorization_probe_failed",
         verifiedAt: observation.verifiedAt,
       })
     }
     if (observation?.state === "valid") {
       const state = expiry !== undefined && expiry - this.#now().getTime() <= expiringWindowMs ? "expiring" : "valid"
-      return status(state, selected.credential.mode, {
+      return status(state, mode, {
         ...(expiry === undefined ? {} : { expiresAt: expiry }),
         verifiedAt: observation.verifiedAt,
       })
     }
-    return status("configured", selected.credential.mode, expiry === undefined ? {} : { expiresAt: expiry })
+    return status("configured", mode, {
+      ...(expiry === undefined ? {} : { expiresAt: expiry }),
+      reason: "authorization is configured but has not been probed",
+      reasonCode: "authorization_unverified",
+    })
   }
 
   async beginAuthorization(method: AuthorizationMethod) {
@@ -258,11 +309,26 @@ export class XiaoYunqueProvider implements ProviderAdapter {
     return this.getAuthorizationStatus({ probe: true, ...(signal === undefined ? {} : { signal }) })
   }
 
+  async cancelAuthorization(authorizationId: string) {
+    if (!this.#pendingAuthorization || this.#pendingAuthorization.id !== authorizationId) {
+      throw new XiaoYunqueInputError("XiaoYunque authorization request was not found")
+    }
+    this.#pendingAuthorization = undefined
+  }
+
   async clearAuthorization() {
     if (!this.#credentials.clear) throw new XiaoYunqueInputError("the configured credential source is read-only")
     await this.#credentials.clear()
     this.#pendingAuthorization = undefined
     this.#observations.clear()
+  }
+
+  async clearAuthorizationMethod(method: AuthorizationMethod) {
+    if (method === "api_key" && this.#credentials.clearAccessKey) await this.#credentials.clearAccessKey()
+    else if (method === "browser_session" && this.#credentials.clearWebSession) await this.#credentials.clearWebSession()
+    else throw new XiaoYunqueInputError("the configured credential source cannot clear that authorization method")
+    this.#observations.delete(method)
+    if (this.#pendingAuthorization?.method === method) this.#pendingAuthorization = undefined
   }
 
   async createAudio(request: AudioCreateRequest, signal?: AbortSignal): Promise<ProviderAudioJobResult> {
@@ -383,11 +449,13 @@ export class XiaoYunqueProvider implements ProviderAdapter {
   }
 
   #selectedCredential(snapshot: XiaoYunqueCredentialSnapshot) {
-    return this.#credentialForMode(snapshot, snapshot.access_key ? "api_key" : "browser_session")
+    return this.#credentialForMode(snapshot, "api_key") ?? this.#credentialForMode(snapshot, "browser_session")
   }
 
-  #credentialForMode(snapshot: XiaoYunqueCredentialSnapshot, mode: "api_key" | "browser_session") {
+  #credentialForMode(snapshot: XiaoYunqueCredentialSnapshot, mode: "api_key" | "browser_session", requireUsable = true) {
+    if (requireUsable && this.#observations.get(mode)?.state === "expired") return undefined
     if (mode === "api_key" && snapshot.access_key) {
+      if (requireUsable && snapshot.access_key_expires_at && new Date(snapshot.access_key_expires_at).getTime() <= this.#now().getTime()) return undefined
       return {
         credential: { accessKey: snapshot.access_key, mode } satisfies XiaoYunqueCredential,
         transport: this.#accessKeyTransport,

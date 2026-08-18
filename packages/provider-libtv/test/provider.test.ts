@@ -5,6 +5,7 @@ import path from "node:path"
 import test from "node:test"
 import {
   LibTvProvider,
+  MemoryLibTvConfiguration,
   type LibTvCommandRunner,
 } from "../src/index.js"
 
@@ -13,7 +14,16 @@ class FakeRunner implements LibTvCommandRunner {
 
   async run(args: readonly string[]) {
     this.calls.push([...args])
+    if (args[0] === "--version") return { stdout: "1.0.2\n" }
     if (args[0] === "account") return { stdout: JSON.stringify({ user: { id: 1 } }) }
+    if (args[0] === "project") {
+      return {
+        stdout: JSON.stringify({
+          projectMetaList: [{ name: "Test Project", uuid: "0000000000000000000000000000abcd" }],
+          total: 1,
+        }),
+      }
+    }
     if (args[0] === "model" && args[1] === "search") {
       const kind = args[args.indexOf("--type") + 1]
       return {
@@ -102,4 +112,23 @@ test("runs LibTV image and video nodes to terminal results", async () => {
   assert.equal(video.status, "completed")
   assert.equal(video.outputs?.[0]?.url, "https://media.example/video.mp4")
   assert.equal((await provider.getVideo(video.reference)).status, "completed")
+})
+
+test("discovers and persists LibTV project configuration separately from authorization", async () => {
+  const configuration = new MemoryLibTvConfiguration()
+  const provider = new LibTvProvider({ configuration, runner: new FakeRunner() })
+  assert.equal((await provider.getConfigurationStatus()).state, "configuration_required")
+  assert.deepEqual(await provider.listResources({ type: "project" }), [{
+    id: "0000000000000000000000000000abcd",
+    name: "Test Project",
+    type: "project",
+  }])
+  const configured = await provider.configure({
+    resource_id: "0000000000000000000000000000abcd",
+    resource_type: "project",
+  })
+  assert.equal(configured.state, "configuration_valid")
+  assert.equal((await provider.getConfigurationStatus()).resource?.id, "0000000000000000000000000000abcd")
+  const dependencies = await provider.getDependencyStatuses({ probe: true })
+  assert.equal(dependencies[0]?.version, "1.0.2")
 })

@@ -5,12 +5,19 @@ import path from "node:path"
 import type {
   ImageCreateRequest,
   ProviderAdapter,
+  ProviderConfigurationSelection,
   ProviderImageJobResult,
   ProviderModel,
+  ProviderModelConstraints,
+  ProviderOptionsSchema,
   ProviderVideoJobResult,
   VideoCreateRequest,
 } from "@shortdrama-router/core"
 import { LibTvProcessRunner, type LibTvCommandRunner } from "./command.js"
+import {
+  MemoryLibTvConfiguration,
+  type LibTvConfigurationSource,
+} from "./configuration.js"
 import {
   LibTvAuthenticationError,
   LibTvInputError,
@@ -49,6 +56,7 @@ type Scalar = boolean | number | string
 
 export interface LibTvProviderOptions {
   readonly cliPath?: string
+  readonly configuration?: LibTvConfigurationSource
   readonly configDir?: string
   readonly projectUuid?: string
   readonly randomId?: () => string
@@ -156,7 +164,7 @@ function resultFromNode(kind: "image" | "video", value: TerminalNode) {
     throw new LibTvUpstreamError(`LibTV ${kind} generation did not complete successfully`)
   }
   const outputs = urls.map(url => ({
-    content_type: kind === "image" ? "image/png" : "video/mp4",
+    content_type: mediaType(kind, url),
     url,
   }))
   return {
@@ -172,6 +180,19 @@ function resultFromNode(kind: "image" | "video", value: TerminalNode) {
   } as const
 }
 
+function mediaType(kind: "image" | "video", url: string) {
+  const pathname = new URL(url).pathname.toLowerCase()
+  if (kind === "image") {
+    if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "image/jpeg"
+    if (pathname.endsWith(".webp")) return "image/webp"
+    if (pathname.endsWith(".gif")) return "image/gif"
+    return "image/png"
+  }
+  if (pathname.endsWith(".webm")) return "video/webm"
+  if (pathname.endsWith(".mov")) return "video/quicktime"
+  return "video/mp4"
+}
+
 function storedResult(reference: Readonly<Record<string, unknown>>, kind: "image" | "video") {
   if (reference.kind !== kind || reference.status !== "completed" || !Array.isArray(reference.outputs)) {
     throw new LibTvInputError(`LibTV ${kind} job reference is invalid`)
@@ -180,7 +201,7 @@ function storedResult(reference: Readonly<Record<string, unknown>>, kind: "image
     const value = record(item)
     const url = safeMediaUrl(value?.url)
     return url === undefined ? [] : [{
-      content_type: kind === "image" ? "image/png" : "video/mp4",
+      content_type: mediaType(kind, url),
       url,
     }]
   })
@@ -188,27 +209,103 @@ function storedResult(reference: Readonly<Record<string, unknown>>, kind: "image
   return { outputs, reference, status: "completed" } as const
 }
 
+function propertyValues(property: unknown) {
+  const value = record(property)
+  const values = Array.isArray(value?.enum)
+    ? value.enum.filter(item => typeof item === "string" || (typeof item === "number" && Number.isFinite(item)))
+    : undefined
+  return { value, values }
+}
+
+function publicModelSchema(properties: Readonly<Record<string, unknown>> | undefined) {
+  if (!properties) return {}
+  const stringConstraint = (name: string) => {
+    const { value, values } = propertyValues(properties[name])
+    const strings = values?.filter((item): item is string => typeof item === "string")
+    if (strings?.length) return { kind: "enum" as const, values: strings }
+    return { kind: "unknown" as const }
+  }
+  const numberConstraint = (name: string) => {
+    const { value, values } = propertyValues(properties[name])
+    const numbers = values?.filter((item): item is number => typeof item === "number")
+    if (numbers?.length) return { kind: "enum" as const, values: numbers }
+    if (typeof value?.minimum === "number" && typeof value.maximum === "number") {
+      return {
+        kind: "range" as const,
+        max: value.maximum,
+        min: value.minimum,
+        ...(typeof value.multipleOf === "number" ? { step: value.multipleOf } : {}),
+      }
+    }
+    return { kind: "unknown" as const }
+  }
+  const schemaProperties = Object.fromEntries(Object.entries(properties).flatMap(([name, property]) => {
+    if (name === "model" || name === "prompt") return []
+    const { value, values } = propertyValues(property)
+    const type = value?.type
+    if (type !== "boolean" && type !== "number" && type !== "object" && type !== "string" && type !== "integer") return []
+    return [[name, {
+      ...(typeof value?.description === "string" ? { description: value.description.slice(0, 512) } : {}),
+      ...(values?.every(item => typeof item === "string" || typeof item === "number") ? { enum: values } : {}),
+      type: type === "integer" ? "number" : type,
+    }]]
+  }))
+  const constraints: ProviderModelConstraints = {
+    aspect_ratio: stringConstraint("ratio"),
+    duration: numberConstraint("duration"),
+    resolution: stringConstraint("resolution"),
+  }
+  const providerOptionsSchema: ProviderOptionsSchema = {
+    additional_properties: false,
+    properties: schemaProperties as ProviderOptionsSchema["properties"],
+  }
+  return {
+    constraints,
+    provider_options_schema: {
+      ...providerOptionsSchema,
+    },
+  }
+}
+
 export class LibTvProvider implements ProviderAdapter {
   readonly metadata = {
     capabilities: {
       authorization: ["oauth"],
+      authorization_methods: [{ actions: ["status", "clear"], management: "external", method: "oauth" }],
+      cancellation: [],
+      configuration: true,
       generation: ["image", "video"],
+      ingestion: [],
       models: true,
       usage: false,
     },
+    contract_version: "2026-08-18",
+    dependencies: [{
+      executable: "libtv",
+      id: "libtv-cli",
+      kind: "executable",
+      required: true,
+      source_url: "https://github.com/libtv-labs/libtv-skills",
+      version_command: ["--version"],
+    }],
     description: "LibTV image and video generation through the official local LibTV CLI.",
     id: "libtv",
     name: "LibTV",
   } as const
 
   readonly #configDir: string
-  readonly #projectUuid: string | undefined
+  readonly #configuration: LibTvConfigurationSource
   readonly #randomId: () => string
   readonly #runner: LibTvCommandRunner
 
   constructor(options: LibTvProviderOptions = {}) {
     this.#configDir = options.configDir ?? process.env.LIBTV_CONFIG_DIR ?? path.join(homedir(), ".libtv")
-    this.#projectUuid = options.projectUuid === undefined ? undefined : projectUuid(options.projectUuid)
+    const configuredProject = options.projectUuid === undefined
+      ? undefined
+      : { id: projectUuid(options.projectUuid), name: options.projectUuid, type: "project" } as const
+    this.#configuration = options.configuration ?? new MemoryLibTvConfiguration(
+      configuredProject === undefined ? {} : { project: configuredProject },
+    )
     this.#randomId = options.randomId ?? randomUUID
     this.#runner = options.runner ?? new LibTvProcessRunner(
       options.cliPath === undefined ? {} : { cliPath: options.cliPath },
@@ -223,6 +320,7 @@ export class LibTvProvider implements ProviderAdapter {
         configured: false,
         method: null,
         reason: "run `libtv login web --open` with the official CLI",
+        reason_code: "authorization_not_configured",
         state: "not_configured",
       } as const
     }
@@ -245,12 +343,110 @@ export class LibTvProvider implements ProviderAdapter {
           configured: true,
           method: "oauth",
           reason: "LibTV rejected the locally stored login",
+          reason_code: "authorization_rejected",
           state: "expired",
           verified_at: new Date().toISOString(),
         } as const
       }
       throw error
     }
+  }
+
+  async clearAuthorization(signal?: AbortSignal) {
+    await this.#runner.run(["logout"], signal)
+  }
+
+  async getDependencyStatuses(options: { readonly probe?: boolean; readonly signal?: AbortSignal } = {}) {
+    const dependency = this.metadata.dependencies[0]
+    if (!options.probe) return [{ ...dependency, available: null, compatible: null, reason_code: "dependency_unprobed" }] as const
+    try {
+      const result = await this.#runner.run(dependency.version_command, options.signal)
+      const version = result.stdout.trim().slice(0, 256)
+      return [{ ...dependency, available: true, compatible: null, ...(version ? { version } : {}) }] as const
+    } catch {
+      return [{
+        ...dependency,
+        available: false,
+        compatible: null,
+        reason: "the official LibTV CLI is unavailable or its version could not be read",
+        reason_code: "dependency_unavailable",
+      }] as const
+    }
+  }
+
+  async getConfigurationStatus(options: { readonly probe?: boolean; readonly signal?: AbortSignal } = {}) {
+    const snapshot = await this.#configuration.read()
+    if (!snapshot.project) {
+      return {
+        configured: false,
+        reason: "select a LibTV project before generation",
+        reason_code: "project_required",
+        state: "configuration_required",
+      } as const
+    }
+    if (!options.probe) {
+      return { configured: true, resource: snapshot.project, state: "configuration_configured" } as const
+    }
+    try {
+      const projects = await this.listResources({ ...(options.signal ? { signal: options.signal } : {}), type: "project" })
+      const project = projects.find(item => item.id === snapshot.project?.id)
+      if (!project) {
+        return {
+          configured: true,
+          reason: "the selected LibTV project is not available to the current account",
+          reason_code: "project_unavailable",
+          resource: snapshot.project,
+          state: "configuration_unavailable",
+          verified_at: new Date().toISOString(),
+        } as const
+      }
+      return {
+        configured: true,
+        resource: project,
+        state: "configuration_valid",
+        verified_at: new Date().toISOString(),
+      } as const
+    } catch {
+      return {
+        configured: true,
+        reason: "LibTV project configuration could not be verified",
+        reason_code: "configuration_probe_failed",
+        resource: snapshot.project,
+        state: "error",
+        verified_at: new Date().toISOString(),
+      } as const
+    }
+  }
+
+  async listResources(options: { readonly signal?: AbortSignal; readonly type?: string } = {}) {
+    if (options.type !== undefined && options.type !== "project") return []
+    const result = await this.#runner.run(["project", "list", "--page-size", "100"], options.signal)
+    const parsed = record(parseJson(result.stdout, "project list"))
+    const values = Array.isArray(parsed?.projectMetaList) ? parsed.projectMetaList : []
+    return values.flatMap(value => {
+      const item = record(value)
+      if (typeof item?.uuid !== "string" || typeof item.name !== "string") return []
+      try {
+        return [{ id: projectUuid(item.uuid), name: item.name.slice(0, 256), type: "project" }]
+      } catch {
+        return []
+      }
+    })
+  }
+
+  async configure(selection: ProviderConfigurationSelection, signal?: AbortSignal) {
+    if (selection.resource_type !== "project") throw new LibTvInputError("LibTV configuration requires a project")
+    if (!this.#configuration.write) throw new LibTvInputError("the configured LibTV configuration source is read-only")
+    const id = projectUuid(selection.resource_id)
+    const project = (await this.listResources({ ...(signal ? { signal } : {}), type: "project" })).find(item => item.id === id)
+    if (!project) throw new LibTvInputError("LibTV project is not available to the current account")
+    await this.#configuration.write({ project })
+    return { configured: true, resource: project, state: "configuration_valid", verified_at: new Date().toISOString() } as const
+  }
+
+  async clearConfiguration() {
+    if (!this.#configuration.clear) throw new LibTvInputError("the configured LibTV configuration source is read-only")
+    await this.#configuration.clear()
   }
 
   async listModels(options: { readonly signal?: AbortSignal } = {}) {
@@ -262,13 +458,28 @@ export class LibTvProvider implements ProviderAdapter {
       for (const item of matches) {
         const match = record(item) as ModelMatch | undefined
         if (!match?.modelKey || !match.modelName) continue
+        let publicSchema: ReturnType<typeof publicModelSchema> = {}
+        try {
+          const detail = parseJson((await this.#runner.run(["model", match.modelKey], options.signal)).stdout, "model schema") as ModelSchema
+          publicSchema = publicModelSchema(detail.schema?.properties)
+        } catch {
+          // Catalog discovery remains usable when one model detail is unavailable.
+        }
         models.push({
-          capabilities: { authorization: ["oauth"] },
+          capabilities: {
+            authorization: ["oauth"],
+            ...(publicSchema.constraints ? { constraints: publicSchema.constraints } : {}),
+            output_media_types: kind === "image"
+              ? ["image/gif", "image/jpeg", "image/png", "image/webp"]
+              : ["video/mp4", "video/quicktime", "video/webm"],
+            references: {},
+          },
           description: match.description ?? `${match.modelName} on LibTV.`,
           id: `libtv/${match.modelKey}`,
           kind,
           name: match.modelName,
           provider: "libtv",
+          ...(publicSchema.provider_options_schema ? { provider_options_schema: publicSchema.provider_options_schema } : {}),
         })
       }
     }
@@ -315,7 +526,13 @@ export class LibTvProvider implements ProviderAdapter {
       throw new LibTvInputError(`LibTV model ${key} is not a ${kind} model`)
     }
     const providerOptions = record(request.provider_options) ?? {}
-    const targetProject = projectUuid(providerOptions.project_uuid ?? this.#projectUuid)
+    const configured = await this.#configuration.read()
+    const targetProject = projectUuid(providerOptions.project_uuid ?? configured.project?.id)
+    await this.#runner.run(["account", "info"], signal)
+    const availableProjects = await this.listResources({ ...(signal ? { signal } : {}), type: "project" })
+    if (!availableProjects.some(item => item.id === targetProject)) {
+      throw new LibTvInputError("LibTV project is not available to the current account")
+    }
     const settings = record(providerOptions.settings) ?? {}
     const args = [
       "node",

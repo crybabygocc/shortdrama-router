@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import test from "node:test"
 import {
   ShortDramaRouter,
+  RouterError,
   type ProviderAdapter,
   type ProviderAuthorizationStatus,
 } from "../src/index.js"
@@ -40,7 +41,7 @@ function provider(): ProviderAdapter {
     },
     async getVideo(reference) {
       return {
-        outputs: [{ url: "https://media.example/video.mp4" }],
+        outputs: [{ content_type: "video/mp4", url: "https://media.example/video.mp4" }],
         reference,
         status: "completed",
       }
@@ -54,7 +55,7 @@ function provider(): ProviderAdapter {
     },
     async getImage(reference) {
       return {
-        outputs: [{ url: "https://media.example/image.png" }],
+        outputs: [{ content_type: "image/png", url: "https://media.example/image.png" }],
         reference,
         status: "completed",
       }
@@ -133,4 +134,67 @@ test("routes audio creation and polling behind a router-owned job id", async () 
   const completed = await router.getAudio(created.id)
   assert.equal(completed.status, "completed")
   assert.equal(completed.outputs?.[0]?.url, "https://media.example/speech.mp3")
+})
+
+test("atomically replays idempotent generation and rejects a conflicting payload", async () => {
+  let submissions = 0
+  const adapter = provider()
+  const originalCreate = adapter.createVideo
+  adapter.createVideo = async (request, signal) => {
+    submissions += 1
+    return originalCreate(request, signal)
+  }
+  let sequence = 0
+  const router = new ShortDramaRouter({ providers: [adapter], randomId: () => `job-${++sequence}` })
+  const first = await router.createVideo({
+    idempotency_key: "customer-request-1",
+    model: "test-provider/video-1",
+    prompt: "A short scene",
+  })
+  const replay = await router.createVideo({
+    idempotency_key: "customer-request-1",
+    model: "test-provider/video-1",
+    prompt: "A short scene",
+  })
+  assert.equal(replay.id, first.id)
+  assert.equal(submissions, 1)
+  await assert.rejects(
+    router.createVideo({
+      idempotency_key: "customer-request-1",
+      model: "test-provider/video-1",
+      prompt: "A different scene",
+    }),
+    (error: unknown) => error instanceof Error && "code" in error && error.code === "idempotency_conflict",
+  )
+})
+
+test("normalizes provider outputs into typed artifacts", async () => {
+  const router = new ShortDramaRouter({ providers: [provider()], randomId: () => "artifact-job" })
+  const created = await router.createVideo({ model: "test-provider/video-1", prompt: "A short scene" })
+  const completed = await router.getVideo(created.id)
+  assert.deepEqual(completed.artifacts, [{
+    kind: "video",
+    media_type: "video/mp4",
+    url: "https://media.example/video.mp4",
+  }])
+})
+
+test("marks uncertain provider acceptance without automatically resubmitting", async () => {
+  let submissions = 0
+  const adapter = provider()
+  adapter.createVideo = async () => {
+    submissions += 1
+    throw new RouterError(
+      "provider_timeout",
+      "provider request timed out",
+      504,
+      { category: "timeout", retryable: true },
+    )
+  }
+  const router = new ShortDramaRouter({ providers: [adapter], randomId: () => "unknown-job" })
+  const created = await router.createVideo({ model: "test-provider/video-1", prompt: "A short scene" })
+  assert.equal(created.status, "submission_unknown")
+  assert.equal(created.error?.retryable, false)
+  assert.equal((await router.getVideo(created.id)).status, "submission_unknown")
+  assert.equal(submissions, 1)
 })

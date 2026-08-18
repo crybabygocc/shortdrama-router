@@ -41,6 +41,9 @@ export class LibTvProcessRunner implements LibTvCommandRunner {
   readonly #timeoutMs: number
 
   constructor(options: LibTvProcessRunnerOptions = {}) {
+    if (options.cliPath !== undefined && !path.isAbsolute(options.cliPath)) {
+      throw new Error("LibTV CLI path must be absolute")
+    }
     this.#cliPath = options.cliPath ?? defaultCliPath()
     this.#maxOutputBytes = options.maxOutputBytes ?? 8 * 1024 * 1024
     this.#timeoutMs = options.timeoutMs ?? 30 * 60_000

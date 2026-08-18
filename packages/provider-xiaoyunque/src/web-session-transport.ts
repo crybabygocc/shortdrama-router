@@ -139,7 +139,14 @@ function audioRunExtra(runId: string) {
   })
 }
 
-function audioOutputs(entries: unknown, allowLoopback: boolean) {
+function audioMediaType(format: unknown) {
+  if (format === "mp3") return "audio/mpeg"
+  if (format === "wav") return "audio/wav"
+  if (format === "ogg_opus") return "audio/ogg"
+  return undefined
+}
+
+function audioOutputs(entries: unknown, allowLoopback: boolean, requestedFormat: unknown) {
   if (!Array.isArray(entries)) return []
   const urls = new Map<string, string | undefined>()
   const containers = entries.flatMap(entryValue => {
@@ -172,7 +179,7 @@ function audioOutputs(entries: unknown, allowLoopback: boolean) {
         : typeof audio.mime_type === "string"
           ? audio.mime_type
           : undefined
-      urls.set(url, mime?.startsWith("audio/") ? mime : undefined)
+      urls.set(url, mime?.startsWith("audio/") ? mime : audioMediaType(requestedFormat))
     }
   }
   return [...urls].map(([url, contentType]) => ({
@@ -270,6 +277,7 @@ export class XiaoYunqueWebSessionTransport implements XiaoYunqueTransport {
     return {
       reference: {
         credential_fingerprint: credentialFingerprint(credential),
+        format: request.format ?? "mp3",
         run_id: typeof run?.run_id === "string" ? run.run_id : runId,
         thread_id: typeof run?.thread_id === "string" ? run.thread_id : threadId,
         transport: "browser_session",
@@ -296,7 +304,7 @@ export class XiaoYunqueWebSessionTransport implements XiaoYunqueTransport {
     if (status === "failed") {
       return { error: { code: "generation_failed", message: "XiaoYunque audio generation failed" }, reference, status }
     }
-    const outputs = audioOutputs(run.entry_list ?? run.message_list, this.#allowLoopback)
+    const outputs = audioOutputs(run.entry_list ?? run.message_list, this.#allowLoopback, reference.format)
     return {
       ...(outputs.length === 0 ? {} : { outputs }),
       reference,

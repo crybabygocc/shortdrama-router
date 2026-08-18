@@ -26,7 +26,9 @@ export const XIAOYUNQUE_AUDIO_MODELS: readonly XiaoYunqueAudioModelDefinition[] 
     audio_formats: ["mp3", "wav", "pcm", "ogg_opus"],
     audio_reference: true,
     authorization: ["browser_session"],
+    output_media_types: ["audio/mpeg", "audio/ogg", "audio/wav"],
     reference_image: true,
+    references: { audio: true, image: true },
     sample_rates: [8_000, 16_000, 24_000, 32_000, 44_100, 48_000],
   },
   description: "Seed Audio 1.0 sound generation for voice, sound effects and music design, with audio or image references.",
@@ -34,6 +36,15 @@ export const XIAOYUNQUE_AUDIO_MODELS: readonly XiaoYunqueAudioModelDefinition[] 
   kind: "audio",
   name: "Seed Audio 1.0",
   provider: "xiaoyunque",
+  provider_options_schema: {
+    additional_properties: false,
+    properties: {
+      loudness_rate: { type: "number" },
+      pitch_rate: { type: "number" },
+      sample_rate: { enum: [8_000, 16_000, 24_000, 32_000, 44_100, 48_000], type: "number" },
+      speech_rate: { type: "number" },
+    },
+  },
   upstream_model: "seedaudio_1.0",
 }]
 
@@ -47,7 +58,14 @@ const imageModel = (
 ): XiaoYunqueImageModelDefinition => ({
   capabilities: {
     aspect_ratios: imageAspectRatios,
+    authorization: ["api_key"],
+    constraints: {
+      aspect_ratio: { kind: "enum", values: imageAspectRatios },
+      ...(options.resolutions === undefined ? {} : { resolution: { kind: "enum", values: options.resolutions } }),
+    },
+    output_media_types: ["image/png", "image/jpeg", "image/webp"],
     reference_image: true,
+    references: { image: true },
     ...(options.resolutions === undefined ? {} : { resolutions: options.resolutions }),
   },
   description: `${name} image generation through XiaoYunque Nest Agent.`,
@@ -71,9 +89,16 @@ export const XIAOYUNQUE_IMAGE_MODELS: readonly XiaoYunqueImageModelDefinition[] 
 const commonVideoCapabilities = {
   aspect_ratios: ["16:9", "9:16", "4:3", "3:4", "1:1"],
   audio_input: true,
+  authorization: ["api_key", "browser_session"],
+  constraints: {
+    aspect_ratio: { kind: "enum", values: ["16:9", "9:16", "4:3", "3:4", "1:1"] },
+    duration: { kind: "range", min: 1, max: 60, step: 1 },
+  },
   durations: null,
   first_frame: true,
   last_frame: true,
+  output_media_types: ["video/mp4"],
+  references: { audio: true, first_frame: true, image: true, last_frame: true, video: true },
   seed: true,
   video_input: true,
 } as const

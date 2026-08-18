@@ -44,6 +44,10 @@ test("lists provider authorization status as JSON", async () => {
 })
 
 test("starts the local HTTP server from the CLI", async () => {
+  const previousAccessKey = process.env.XYQ_ACCESS_KEY
+  const previousLegacyAccessKey = process.env.XIAOYUNQUE_ACCESS_KEY
+  delete process.env.XYQ_ACCESS_KEY
+  delete process.env.XIAOYUNQUE_ACCESS_KEY
   const output: string[] = []
   let received: { host?: string; port?: number } | undefined
   const code = await runCli(["serve", "--host", "127.0.0.1", "--port", "18080"], {
@@ -57,8 +61,13 @@ test("starts the local HTTP server from the CLI", async () => {
       }
     },
   })
-  assert.equal(code, 0)
-  assert.deepEqual(received, { host: "127.0.0.1", port: 18080 })
+  try {
+    assert.equal(code, 0)
+    assert.deepEqual(received, { host: "127.0.0.1", port: 18080 })
+  } finally {
+    if (previousAccessKey !== undefined) process.env.XYQ_ACCESS_KEY = previousAccessKey
+    if (previousLegacyAccessKey !== undefined) process.env.XIAOYUNQUE_ACCESS_KEY = previousLegacyAccessKey
+  }
   assert.match(output.join("\n"), /listening on http:\/\/127\.0\.0\.1:18080/u)
 })
 

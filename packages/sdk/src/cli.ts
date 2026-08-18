@@ -149,7 +149,12 @@ export async function runCli(args: readonly string[], options: CliOptions = {}) 
       accessKey: process.env.XYQ_ACCESS_KEY ?? process.env.XIAOYUNQUE_ACCESS_KEY,
     },
   })
-  const providers = await router.listProviders({ probeAuthorization: flags.includes("--probe") })
+  const probe = flags.includes("--probe")
+  const providers = await router.listProviders({
+    probeAuthorization: probe,
+    probeConfiguration: probe,
+    probeDependencies: probe,
+  })
   io.output(flags.includes("--json")
     ? JSON.stringify({ data: providers }, null, 2)
     : formatProviderTable(providers))

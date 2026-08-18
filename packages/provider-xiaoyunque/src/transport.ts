@@ -128,8 +128,11 @@ export function nativeAsset(reference: ProviderAssetReference) {
     }
     return value
   }
-  const pippitAssetId = requireAssetId(reference.pippit_asset_id, "pippit_asset_id")
-  if (pippitAssetId === undefined) throw new XiaoYunqueInputError("pippit_asset_id is required")
+  if (reference.provider !== undefined && reference.provider !== "xiaoyunque") {
+    throw new XiaoYunqueInputError("asset reference belongs to another provider")
+  }
+  const pippitAssetId = requireAssetId(reference.id ?? reference.pippit_asset_id, "id")
+  if (pippitAssetId === undefined) throw new XiaoYunqueInputError("asset reference id is required")
   const assetId = requireAssetId(reference.asset_id, "asset_id")
   return {
     ...(assetId === undefined ? {} : { asset_id: assetId }),

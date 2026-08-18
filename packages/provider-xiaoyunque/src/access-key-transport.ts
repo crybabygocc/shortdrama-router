@@ -79,7 +79,15 @@ function imageOutputUrls(entries: unknown, allowLoopback: boolean) {
       if (url) urls.add(url)
     }
   }
-  return [...urls].map(url => ({ url }))
+  return [...urls].map(url => {
+    const pathname = new URL(url).pathname.toLowerCase()
+    const contentType = pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")
+      ? "image/jpeg"
+      : pathname.endsWith(".webp")
+        ? "image/webp"
+        : "image/png"
+    return { content_type: contentType, url }
+  })
 }
 
 export class XiaoYunqueAccessKeyTransport implements XiaoYunqueTransport {
@@ -176,7 +184,7 @@ export class XiaoYunqueAccessKeyTransport implements XiaoYunqueTransport {
       ...references.images,
       ...references.videos,
       ...references.audios,
-    ].map(reference => reference.pippit_asset_id))]
+    ].map(reference => nativeAsset(reference).pippit_asset_id))]
     const result = await requestEnvelope(this.#fetch, new URL(submitPath, this.#baseUrl), {
       body: JSON.stringify({
         agent_name: "pippit_video_part_agent",
