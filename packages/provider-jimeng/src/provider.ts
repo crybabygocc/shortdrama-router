@@ -190,7 +190,9 @@ export class JimengProvider implements ProviderAdapter {
       executable: "dreamina",
       id: "dreamina-cli",
       kind: "executable",
+      managed_install: true,
       required: true,
+      source_url: "https://jimeng.jianying.com/ai-tool/install",
       version_command: ["--version"],
     }],
     description: "Jimeng image and video generation through the official local Dreamina CLI.",
@@ -325,7 +327,27 @@ export class JimengProvider implements ProviderAdapter {
     try {
       const result = await this.#runner.run(dependency.version_command, options.signal)
       const version = result.stdout.trim().slice(0, 256)
-      return [{ ...dependency, available: true, compatible: null, ...(version ? { version } : {}) }] as const
+      const start = version.indexOf("{")
+      const end = version.indexOf("}", start + 1)
+      let recognized: string | undefined
+      if (start !== -1 && end !== -1) {
+        try {
+          const value = JSON.parse(version.slice(start, end + 1)) as { version?: unknown }
+          if (typeof value.version === "string" && value.version.trim()) recognized = value.version.trim()
+        } catch {
+          // An unrecognized version is reported as incompatible below.
+        }
+      }
+      return [{
+        ...dependency,
+        available: true,
+        compatible: recognized !== undefined,
+        ...(recognized ? { version: recognized } : version ? { version } : {}),
+        ...(recognized ? {} : {
+          reason: "Dreamina CLI version could not be recognized",
+          reason_code: "dependency_version_unrecognized",
+        }),
+      }] as const
     } catch {
       return [{
         ...dependency,

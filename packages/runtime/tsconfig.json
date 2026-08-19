@@ -5,9 +5,5 @@
     "rootDir": "."
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["dist", "test"],
-  "references": [
-    { "path": "../core" },
-    { "path": "../runtime" }
-  ]
+  "exclude": ["dist", "test"]
 }

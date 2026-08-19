@@ -68,6 +68,7 @@ export interface ProviderDependencyDescriptor {
   readonly executable: string
   readonly id: string
   readonly kind: "executable"
+  readonly managed_install?: boolean
   readonly required: true
   readonly source_url?: string
   readonly version_command: readonly string[]

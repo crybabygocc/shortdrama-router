@@ -1,7 +1,7 @@
 {
-  "name": "@shortdrama-router/provider-libtv",
+  "name": "@shortdrama-router/runtime",
   "version": "0.4.0",
-  "description": "LibTV provider adapter for shortdrama-router",
+  "description": "Managed executable runtimes for shortdrama-router providers",
   "type": "module",
   "license": "MIT",
   "sideEffects": false,
@@ -14,10 +14,6 @@
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
     }
-  },
-  "dependencies": {
-    "@shortdrama-router/core": "0.4.0",
-    "@shortdrama-router/runtime": "0.4.0"
   },
   "scripts": {
     "build": "tsc -b --pretty false",

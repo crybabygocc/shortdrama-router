@@ -6,6 +6,7 @@
 
 ```text
 packages/core/                  provider contracts, registry, routing, job store
+packages/runtime/               generic managed executable download and installation
 packages/provider-jimeng/       official Dreamina CLI adapter and OAuth Device Flow
 packages/provider-libtv/        official LibTV CLI adapter and live model catalog
 packages/provider-xiaoyunque/  XiaoYunque catalog, credentials and transports
@@ -17,6 +18,10 @@ Dependency direction is one-way:
 
 ```text
 sdk -> http -> core
+sdk -> runtime
+http -> runtime
+provider-jimeng -> runtime
+provider-libtv -> runtime
 sdk -> provider-jimeng -> core
 sdk -> provider-libtv -> core
 sdk -> provider-xiaoyunque -> core
@@ -70,9 +75,13 @@ The Access Key transport uses the official `/api/biz/v1/skill/*` surfaces. The W
 
 Authorization inspection distinguishes configured, verified, expiring and expired credentials. When the provider cannot safely verify an Access Key, it reports `configured` rather than inventing validity.
 
-## Official local CLI providers
+## Managed official CLI providers
 
-The Jimeng and LibTV adapters execute their official local CLIs as argument arrays without a shell. Their OAuth credentials stay in each CLI's own local credential store; the router only reads command results and never imports tokens into provider job records.
+The Jimeng and LibTV adapters execute their official local CLIs as argument arrays without a shell. A user-selected runtime installation downloads the platform artifact from the provider's official host into shortdrama-router's application data directory. The adapter executes that absolute path and does not modify PATH or shell profiles. An explicit application-supplied CLI path remains available for development and managed deployments.
+
+The npm package is the embeddable SDK. GitHub Releases additionally contain a Node.js single-executable application built from the same SDK, so end users do not need Node.js or npm. Runtime installation is exposed through both that executable and the loopback management API.
+
+CLI dependencies must return a recognizable version and pass their adapter's compatibility probe. Merely finding an executable is insufficient to mark provider models available.
 
 Jimeng maps router image/video jobs to the official `dreamina` asynchronous submit and query commands. LibTV maps jobs to uniquely named image/video nodes on a configured user canvas and waits for the official `libtv node --run` terminal JSON. Neither adapter estimates credits when the official command output does not supply a stable per-request estimate.
 

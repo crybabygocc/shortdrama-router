@@ -7,6 +7,7 @@ import {
   LibTvUnavailableError,
   LibTvUpstreamError,
 } from "./errors.js"
+import { libtvManagedCliPath } from "./runtime.js"
 
 export interface LibTvCommandResult {
   readonly stderr?: string
@@ -24,8 +25,10 @@ export interface LibTvProcessRunnerOptions {
 }
 
 function defaultCliPath() {
+  const managed = libtvManagedCliPath()
+  if (existsSync(managed)) return managed
   const installed = path.join(homedir(), ".libtv", "libtv")
-  return existsSync(installed) ? installed : "libtv"
+  return existsSync(installed) ? installed : managed
 }
 
 function commandFailure(output: string) {

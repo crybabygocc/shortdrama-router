@@ -1,6 +1,6 @@
 {
   "name": "shortdrama-router-workspace",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "packageManager": "npm@12.0.1",
@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "build": "tsc -b --pretty false",
+    "build:standalone": "npm run build:standalone -w packages/sdk",
     "check": "npm run build && npm test",
     "clean": "tsc -b --clean",
     "test": "npm run build && npm run test --workspaces --if-present",
@@ -20,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^24.0.0",
     "esbuild": "0.28.1",
+    "postject": "^1.0.0-alpha.6",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   },

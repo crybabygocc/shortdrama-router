@@ -12,6 +12,7 @@ const packages = {
   "@shortdrama-router/provider-jimeng": path.join(typesRoot, "vendor/provider-jimeng/index.js"),
   "@shortdrama-router/provider-libtv": path.join(typesRoot, "vendor/provider-libtv/index.js"),
   "@shortdrama-router/provider-xiaoyunque": path.join(typesRoot, "vendor/provider-xiaoyunque/index.js"),
+  "@shortdrama-router/runtime": path.join(typesRoot, "vendor/runtime/index.js"),
 }
 
 async function copyDeclarations(source, destination) {
@@ -41,6 +42,7 @@ await rm(typesRoot, { force: true, recursive: true })
 await copyDeclarations(path.join(packageRoot, "dist/src"), typesRoot)
 await copyDeclarations(path.join(workspacePackages, "core/dist/src"), path.join(typesRoot, "vendor/core"))
 await copyDeclarations(path.join(workspacePackages, "http/dist/src"), path.join(typesRoot, "vendor/http"))
+await copyDeclarations(path.join(workspacePackages, "runtime/dist/src"), path.join(typesRoot, "vendor/runtime"))
 await copyDeclarations(
   path.join(workspacePackages, "provider-jimeng/dist/src"),
   path.join(typesRoot, "vendor/provider-jimeng"),

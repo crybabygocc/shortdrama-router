@@ -6,7 +6,7 @@
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：`0.3.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型与依赖发现、分方式授权状态、配置就绪状态、本地 HTTP 服务和 npm 聚合包。
+> 当前状态：`0.4.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型与依赖发现、分方式授权状态、受管理的官方 CLI 运行时、本地 HTTP 服务、npm SDK 和无需 npm 的独立程序。
 
 ## 为什么使用 shortdrama-router
 
@@ -47,13 +47,36 @@ OpenRouter 的视频接口更适合多模型路由。项目沿用它的多 provi
 
 详细判断见 [协议兼容性](docs/protocol-compatibility.md)，接口草案见 [OpenAPI](openapi/openapi.yaml)。
 
+## 无需 npm 的独立程序
+
+普通用户不需要安装 Node.js、npm、Dreamina CLI 或 LibTV CLI。GitHub Releases 提供包含 Node.js 运行时的 macOS、Linux 和 Windows 独立程序；下载对应平台制品后即可直接启动本地 API。
+
+即梦和 LibTV 插件需要官方 CLI。用户明确安装对应插件时，`shortdrama-router` 会识别当前平台、从官方地址下载 CLI，并安装到自己的应用数据目录。程序始终使用这个受管理的绝对路径，不修改 `PATH`、shell profile 或其他应用配置。小云雀直接使用 HTTP 能力，不需要额外运行时。
+
+独立程序中的 Provider 安装操作可以由宿主产品的插件界面调用，也可以直接由本地管理员执行：
+
+```bash
+./shortdrama-router providers install jimeng
+./shortdrama-router providers install libtv
+```
+
+独立程序和 npm CLI 使用同一套接口。运行时也可以通过本地管理 API 安装：
+
+```http
+GET  /api/v1/providers/{provider}/runtime
+POST /api/v1/providers/{provider}/runtime
+```
+
+安装后仍需按 provider 的官方流程完成账号授权。`DREAMINA_CLI_PATH` 和 `LIBTV_CLI_PATH` 仅作为开发者显式覆盖，不再从任意 `PATH` 位置执行同名程序。
+
 ## npm 使用
 
-`packages/sdk` 提供名为 `shortdrama-router` 的聚合 npm 包，一次导出 router、HTTP handler 和全部内置 provider：
+npm 包面向需要嵌入 Node.js 业务的开发者；它不是普通用户安装独立程序的前置条件。`packages/sdk` 提供名为 `shortdrama-router` 的聚合 SDK，一次导出 router、HTTP handler、运行时管理和全部内置 provider：
 
 ```bash
 npx shortdrama-router providers
 npx shortdrama-router providers --probe
+npx shortdrama-router providers install libtv
 ```
 
 该命令列出当前支持的服务及其授权状态；`--probe` 会实时验证已经配置的凭证，`--json` 可供其他程序读取。
@@ -65,11 +88,8 @@ import {
 } from "shortdrama-router"
 
 const router = createShortDramaRouter({
-  jimeng: {
-    cliPath: process.env.DREAMINA_CLI_PATH,
-  },
+  jimeng: {},
   libtv: {
-    cliPath: process.env.LIBTV_CLI_PATH,
     projectUuid: process.env.LIBTV_PROJECT_UUID,
   },
   xiaoyunque: {
@@ -92,9 +112,7 @@ const handle = createRouterHttpHandler(router)
 
 ```bash
 export XYQ_ACCESS_KEY="<your-xiaoyunque-access-key>"
-export LIBTV_CLI_PATH="$HOME/.libtv/libtv"
 export LIBTV_PROJECT_UUID="<your-libtv-canvas-uuid>"
-export DREAMINA_CLI_PATH="$HOME/.local/bin/dreamina"
 export SHORTDRAMA_ROUTER_KEY="<your-local-router-key>"
 npx shortdrama-router serve --host 127.0.0.1 --port 8080
 ```
@@ -179,10 +197,11 @@ curl http://localhost:8080/api/v1/videos \
 
 实际模型和支持参数按服务查询，例如 `/api/v1/providers/xiaoyunque/models`。项目不提供把所有三方模型混在一起的全局 `/models` 列表。
 
-LibTV 与即梦都优先复用各自官方本地 CLI：
+LibTV 与即梦都通过各自官方本地 CLI 工作：
 
-- LibTV：在官网 **CLI & Skill** 页面安装 `libtv`，执行 `libtv login web --open`，并通过 `LIBTV_PROJECT_UUID` 指定生成节点所在画布；
-- 即梦：在官网 **即梦 CLI** 页面安装 `dreamina`，执行 `dreamina login`。即梦官方 CLI 当前仅向高级会员开放生成，普通 Web 登录仍可使用官网，但不会获得 CLI 生成权限。
+- 安装 Provider 插件时由 router 自动下载对应平台的 CLI，不要求用户另外安装 npm 或修改系统 PATH；
+- LibTV：完成安装后执行官方 OAuth 登录，并通过配置 API 选择生成节点所在画布；
+- 即梦：完成安装后使用官方 OAuth Device Flow。即梦官方 CLI 当前仅向高级会员开放生成，普通 Web 登录仍可使用官网，但不会获得 CLI 生成权限。
 
 ## 服务与授权状态
 
@@ -198,6 +217,8 @@ LibTV 与即梦都优先复用各自官方本地 CLI：
 - `GET /api/v1/providers/{provider}/resources`：发现项目、画布等可选资源；
 - `GET|PUT|DELETE /api/v1/providers/{provider}/configuration`：查询、选择或清除运行配置；
 - `GET /api/v1/providers/{provider}/models`：只查询该服务的模型。
+- `GET /api/v1/providers/{provider}/runtime`：查询由 router 管理的官方 CLI 运行时；
+- `POST /api/v1/providers/{provider}/runtime`：按当前平台下载并安装官方 CLI 运行时。
 
 授权状态包括 `not_configured`、`configured`、`valid`、`expiring`、`expired` 和 `error`。无法可靠验证时保持 `configured`，不会猜测为有效。
 
@@ -216,8 +237,8 @@ LibTV 与即梦都优先复用各自官方本地 CLI：
 当前与首批目标包括：
 
 - `xiaoyunque/*`：已实现用户主动登录后创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频及音频参考、Seed Audio 语音/音效/音乐生成、本地 Web 会话授权、模型发现、授权状态、任务提交和轮询；
-- `libtv/*`：已通过官方 `libtv` CLI 接入实时模型发现、OAuth 本地状态、项目发现与选择、生图和生视频；每次生成在用户选择的 LibTV 项目中创建独立节点；
-- `jimeng/*`：已通过官方 `dreamina` CLI 接入 OAuth Device Flow、积分授权探测、图像与视频模型发现、异步提交和结果查询；
+- `libtv/*`：已通过受管理的官方 `libtv` CLI 接入实时模型发现、OAuth 本地状态、项目发现与选择、生图和生视频；每次生成在用户选择的 LibTV 项目中创建独立节点；
+- `jimeng/*`：已通过受管理的官方 `dreamina` CLI 接入 OAuth Device Flow、积分授权探测、图像与视频模型发现、异步提交和结果查询；
 - `kling/*`：路线图，尚未包含在当前 npm 版本中。
 
 接入优先级：官方 API Key / OAuth → 官方 access key → 用户本地授权会话。每个 adapter 对外声明自己的授权类型和支持能力。

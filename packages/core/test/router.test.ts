@@ -82,6 +82,35 @@ test("discovers providers and lists models only within one provider", async () =
   assert.equal("listModels" in router, false)
 })
 
+test("does not mark a model available when an executable dependency compatibility is unknown", async () => {
+  const base = provider()
+  const metadata = {
+    ...base.metadata,
+    dependencies: [{
+      executable: "fixture",
+      id: "fixture-cli",
+      kind: "executable",
+      required: true,
+      version_command: ["--version"],
+    }],
+  }
+  const adapter: ProviderAdapter = {
+    ...base,
+    metadata,
+    async getDependencyStatuses() {
+      return [{
+        ...metadata.dependencies[0]!,
+        available: true,
+        compatible: null,
+        version: "unknown-build",
+      }]
+    },
+  }
+  const model = (await new ShortDramaRouter({ providers: [adapter] }).listProviderModels("test-provider", undefined, true))[0]
+  assert.equal(model?.availability?.state, "unavailable")
+  assert.equal(model?.availability?.reason_code, "dependency_incompatible")
+})
+
 test("routes video creation and polling behind a router-owned job id", async () => {
   const router = new ShortDramaRouter({
     providers: [provider()],

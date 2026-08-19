@@ -284,8 +284,9 @@ export class LibTvProvider implements ProviderAdapter {
       executable: "libtv",
       id: "libtv-cli",
       kind: "executable",
+      managed_install: true,
       required: true,
-      source_url: "https://github.com/libtv-labs/libtv-skills",
+      source_url: "https://liblibai-web-static.liblib.cloud/cli/",
       version_command: ["--version"],
     }],
     description: "LibTV image and video generation through the official local LibTV CLI.",
@@ -362,7 +363,20 @@ export class LibTvProvider implements ProviderAdapter {
     try {
       const result = await this.#runner.run(dependency.version_command, options.signal)
       const version = result.stdout.trim().slice(0, 256)
-      return [{ ...dependency, available: true, compatible: null, ...(version ? { version } : {}) }] as const
+      const recognized = version.match(/\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/u)?.[1]
+      const compatible = recognized === "1.0.2"
+      return [{
+        ...dependency,
+        available: true,
+        compatible,
+        ...(recognized ? { version: recognized } : version ? { version } : {}),
+        ...(compatible ? {} : {
+          reason: recognized
+            ? `LibTV CLI ${recognized} is not supported; install 1.0.2`
+            : "LibTV CLI version could not be recognized",
+          reason_code: recognized ? "dependency_version_incompatible" : "dependency_version_unrecognized",
+        }),
+      }] as const
     } catch {
       return [{
         ...dependency,

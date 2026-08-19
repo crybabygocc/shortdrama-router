@@ -4,6 +4,7 @@ import {
   ShortDramaRouter,
   type ProviderAdapter,
 } from "@shortdrama-router/core"
+import type { ProviderRuntimeService } from "@shortdrama-router/runtime"
 import { createRouterHttpHandler } from "../src/index.js"
 
 const provider: ProviderAdapter = {
@@ -58,6 +59,46 @@ test("serves provider discovery and provider-scoped models without global models
 
   const globalModels = await handle(new Request("http://router.local/api/v1/models"))
   assert.equal(globalModels.status, 404)
+})
+
+test("installs and inspects provider runtimes through the management API", async () => {
+  let installed = false
+  const providerRuntimes: ProviderRuntimeService = {
+    async getStatus(provider) {
+      return {
+        compatible: installed,
+        id: provider,
+        managed: true,
+        platform: "test-platform",
+        state: installed ? "installed" : "not_installed",
+      }
+    },
+    async install(provider) {
+      installed = true
+      return {
+        compatible: true,
+        executable_path: `/managed/${provider}`,
+        id: provider,
+        managed: true,
+        platform: "test-platform",
+        state: "installed",
+        version: "1.0.0",
+      }
+    },
+    supports(runtimeProvider) {
+      return runtimeProvider === "test-provider"
+    },
+  }
+  const handle = createRouterHttpHandler(new ShortDramaRouter({ providers: [provider] }), { providerRuntimes })
+  const before = await handle(new Request("http://router.local/api/v1/providers/test-provider/runtime"))
+  assert.equal((await before.json() as { state: string }).state, "not_installed")
+  const response = await handle(new Request("http://router.local/api/v1/providers/test-provider/runtime", {
+    body: "{}",
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  }))
+  assert.equal(response.status, 201)
+  assert.equal((await response.json() as { executable_path: string }).executable_path, "/managed/test-provider")
 })
 
 test("creates and polls a video through the Fetch handler", async () => {

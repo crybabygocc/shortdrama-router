@@ -21,6 +21,8 @@ export * from "@shortdrama-router/http"
 export * from "@shortdrama-router/provider-jimeng"
 export * from "@shortdrama-router/provider-libtv"
 export * from "@shortdrama-router/provider-xiaoyunque"
+export * from "@shortdrama-router/runtime"
+export * from "./runtimes.js"
 export * from "./server.js"
 
 export interface CreateShortDramaRouterOptions

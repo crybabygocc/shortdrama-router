@@ -8,6 +8,7 @@
   "exclude": ["dist", "test"],
   "references": [
     { "path": "../core" },
+    { "path": "../runtime" },
     { "path": "../provider-jimeng" },
     { "path": "../provider-libtv" },
     { "path": "../provider-xiaoyunque" },

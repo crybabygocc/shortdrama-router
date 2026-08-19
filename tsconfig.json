@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/core" },
+    { "path": "./packages/runtime" },
     { "path": "./packages/provider-jimeng" },
     { "path": "./packages/provider-libtv" },
     { "path": "./packages/provider-xiaoyunque" },

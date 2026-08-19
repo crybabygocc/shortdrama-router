@@ -142,15 +142,21 @@ function providerReadinessAvailability(model: ProviderModel, descriptor: Provide
       }
     }
   }
-  const unavailableDependency = descriptor.dependency_statuses?.find(status => status.available !== true)
+  const unavailableDependency = descriptor.dependency_statuses?.find(status => status.available !== true || status.compatible !== true)
   if (unavailableDependency) {
     const unprobed = unavailableDependency.reason_code === "dependency_unprobed"
     return {
       ...authorizationAvailability,
       availability: {
         observed_at: now,
-        reason: unavailableDependency.reason ?? (unprobed ? "provider dependency has not been probed" : "provider dependency is unavailable"),
-        reason_code: unavailableDependency.reason_code ?? "dependency_unavailable",
+          reason: unavailableDependency.reason ?? (unprobed
+            ? "provider dependency has not been probed"
+            : unavailableDependency.available === true
+              ? "provider dependency is incompatible"
+              : "provider dependency is unavailable"),
+          reason_code: unavailableDependency.reason_code ?? (unavailableDependency.available === true
+            ? "dependency_incompatible"
+            : "dependency_unavailable"),
         state: unprobed ? "unknown" as const : "unavailable" as const,
       },
     }

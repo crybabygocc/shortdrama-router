@@ -18,6 +18,15 @@ shortdrama-router may handle API keys, access keys, OAuth tokens and user-author
 
 Local session adapters use a browser session that the user authorizes on the provider's official site. The adapter reads only the credentials required for its own provider, keeps them local, and exposes only normalized task operations to shortdrama-router.
 
+## Managed provider runtimes
+
+- Download executable runtimes only after an explicit provider-install action.
+- Use fixed official HTTPS hosts and a platform allowlist; never accept an arbitrary runtime URL from an API request.
+- Extract only the expected executable from provider ZIP files and enforce a bounded download size.
+- Store managed executables under shortdrama-router's application data directory and invoke them by absolute path without a shell.
+- Require a recognizable version and successful compatibility probe before reporting the dependency as usable.
+- Do not execute upstream installer scripts or let runtime installation modify PATH, shell profiles or unrelated application files.
+
 ## Deployment baseline
 
 - Do not expose the gateway without its own authentication and rate limits.

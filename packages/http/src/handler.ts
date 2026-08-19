@@ -8,12 +8,14 @@ import {
   type ProviderAuthorizationCompletion,
   type VideoCreateRequest,
 } from "@shortdrama-router/core"
+import type { ProviderRuntimeService } from "@shortdrama-router/runtime"
 
 const maximumBodyBytes = 1024 * 1024
 export interface RouterHttpHandlerOptions {
   readonly authorize?: (request: Request) => boolean | Promise<boolean>
   readonly imagePollIntervalMs?: number
   readonly imageTimeoutMs?: number
+  readonly providerRuntimes?: ProviderRuntimeService
   readonly sleep?: (milliseconds: number, signal?: AbortSignal) => Promise<void>
 }
 
@@ -281,6 +283,34 @@ export function createRouterHttpHandler(
         }
         if (path[2] === "models" && path.length === 3 && request.method === "GET") {
           return json({ data: await router.listProviderModels(provider, request.signal, probeRequested(url)) })
+        }
+        if (path[2] === "runtime" && path.length === 3) {
+          if (!options.providerRuntimes?.supports(provider)) {
+            throw new RouterError("runtime_not_supported", `provider ${provider} does not require a managed runtime`, 404, {
+              category: "unsupported",
+              provider,
+              retryable: false,
+            })
+          }
+          if (request.method === "GET") {
+            return json(await options.providerRuntimes.getStatus(provider, { signal: request.signal }))
+          }
+          if (request.method === "POST") {
+            if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
+              throw new RouterError("invalid_request", "runtime installation requires application/json", 400)
+            }
+            await boundedJson(request)
+            try {
+              return json(await options.providerRuntimes.install(provider, { signal: request.signal }), 201)
+            } catch (error) {
+              throw new RouterError(
+                "runtime_install_failed",
+                error instanceof Error ? error.message : `failed to install the ${provider} runtime`,
+                502,
+                { category: "configuration", provider, retryable: true },
+              )
+            }
+          }
         }
         if (path[2] === "authorization" && path.length === 3) {
           if (request.method === "GET") {

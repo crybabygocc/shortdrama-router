@@ -5,6 +5,7 @@ import path from "node:path"
 import test from "node:test"
 import { pathToFileURL } from "node:url"
 import { ShortDramaRouter, type ProviderAdapter } from "@shortdrama-router/core"
+import type { ProviderRuntimeService } from "@shortdrama-router/runtime"
 import { isCliEntry, runCli } from "../src/cli.js"
 
 const provider: ProviderAdapter = {
@@ -41,6 +42,35 @@ test("lists provider authorization status as JSON", async () => {
   assert.equal(code, 0)
   const result = JSON.parse(output[0] ?? "") as { data: Array<{ id: string }> }
   assert.equal(result.data[0]?.id, "test-provider")
+})
+
+test("installs a provider runtime through the CLI", async () => {
+  const output: string[] = []
+  const runtimeService: ProviderRuntimeService = {
+    async getStatus() {
+      throw new Error("not used")
+    },
+    async install(provider) {
+      return {
+        compatible: true,
+        executable_path: `/managed/${provider}`,
+        id: provider,
+        managed: true,
+        platform: "test-platform",
+        state: "installed",
+        version: "1.0.0",
+      }
+    },
+    supports(provider) {
+      return provider === "jimeng"
+    },
+  }
+  const code = await runCli(["providers", "install", "jimeng", "--json"], {
+    io: { error: value => output.push(value), output: value => output.push(value) },
+    runtimeService,
+  })
+  assert.equal(code, 0)
+  assert.equal((JSON.parse(output[0] ?? "") as { executable_path: string }).executable_path, "/managed/jimeng")
 })
 
 test("starts the local HTTP server from the CLI", async () => {

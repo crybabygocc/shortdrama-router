@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: shortdrama-router API
-  version: 0.3.0
+  version: 0.4.0
   description: >-
     OpenAI/OpenRouter-style audio, image and video routing for short-drama creation
     platforms. Models and authorization are discovered per provider.
@@ -109,6 +109,46 @@ paths:
                     items:
                       $ref: '#/components/schemas/ProviderModel'
         '404':
+          $ref: '#/components/responses/Error'
+  /api/v1/providers/{provider_id}/runtime:
+    get:
+      tags: [Providers]
+      operationId: getProviderRuntime
+      summary: Inspect a provider's locally managed executable runtime
+      parameters:
+        - $ref: '#/components/parameters/ProviderId'
+      responses:
+        '200':
+          description: Managed runtime status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRuntimeStatus'
+        '404':
+          $ref: '#/components/responses/Error'
+    post:
+      tags: [Providers]
+      operationId: installProviderRuntime
+      summary: Download and install a provider's official runtime for this platform
+      parameters:
+        - $ref: '#/components/parameters/ProviderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        '201':
+          description: Installed managed runtime
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProviderRuntimeStatus'
+        '404':
+          $ref: '#/components/responses/Error'
+        '502':
           $ref: '#/components/responses/Error'
   /api/v1/providers/{provider_id}/authorization:
     get:
@@ -669,6 +709,23 @@ components:
         reason: { type: string }
         reason_code: { type: string }
         verified_at: { type: string, format: date-time }
+    ProviderRuntimeStatus:
+      type: object
+      required: [compatible, id, managed, platform, state]
+      properties:
+        compatible: { type: boolean }
+        executable_path: { type: string }
+        id: { type: string }
+        installed_at: { type: string, format: date-time }
+        managed: { const: true }
+        platform: { type: string }
+        reason: { type: string }
+        reason_code: { type: string }
+        release_version: { type: string }
+        source_url: { type: string, format: uri }
+        state:
+          enum: [installed, invalid, not_installed, unsupported_platform]
+        version: { type: string }
     ProviderDescriptor:
       type: object
       required: [authorization, capabilities, description, id, name]
@@ -696,6 +753,8 @@ components:
                 type: [boolean, 'null']
               compatible:
                 type: [boolean, 'null']
+              managed_install:
+                type: boolean
         capabilities:
           type: object
           required: [authorization, generation, models, usage]

@@ -7,6 +7,8 @@ import { createRouterHttpHandler } from "@shortdrama-router/http"
 import { JimengProvider } from "@shortdrama-router/provider-jimeng"
 import { LibTvProvider } from "@shortdrama-router/provider-libtv"
 import { XiaoYunqueProvider } from "@shortdrama-router/provider-xiaoyunque"
+import type { ProviderRuntimeService } from "@shortdrama-router/runtime"
+import { createBuiltInRuntimeService } from "./runtimes.js"
 
 export interface RouterServerOptions {
   readonly accessKey?: string
@@ -15,6 +17,7 @@ export interface RouterServerOptions {
   readonly libtvCliPath?: string
   readonly libtvProjectUuid?: string
   readonly port?: number
+  readonly providerRuntimes?: ProviderRuntimeService
   readonly router?: ShortDramaRouter
   readonly routerKey?: string
 }
@@ -92,6 +95,7 @@ export async function startRouterServer(options: RouterServerOptions = {}): Prom
     ],
   })
   const handle = createRouterHttpHandler(router, {
+    providerRuntimes: options.providerRuntimes ?? createBuiltInRuntimeService(),
     ...(options.routerKey === undefined ? {} : {
       authorize: (request) => authorized(request.headers.get("authorization"), options.routerKey!),
     }),

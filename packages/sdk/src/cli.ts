@@ -6,7 +6,9 @@ import type {
   ProviderDescriptor,
   ShortDramaRouter,
 } from "@shortdrama-router/core"
+import type { ProviderRuntimeService } from "@shortdrama-router/runtime"
 import { createShortDramaRouter } from "./index.js"
+import { createBuiltInRuntimeService } from "./runtimes.js"
 import {
   startRouterServer,
   type RouterServerOptions,
@@ -21,6 +23,7 @@ export interface CliIo {
 export interface CliOptions {
   readonly io?: CliIo
   readonly router?: ShortDramaRouter
+  readonly runtimeService?: ProviderRuntimeService
   readonly startServer?: (options: RouterServerOptions) => Promise<RunningRouterServer>
 }
 
@@ -53,10 +56,11 @@ function usage() {
   return [
     "Usage:",
     "  shortdrama-router providers [--probe] [--json]",
+    "  shortdrama-router providers install <jimeng|libtv> [--json]",
     "  shortdrama-router serve [--host HOST] [--port PORT]",
     "",
     "Commands:",
-    "  providers   List installed services and their authorization status.",
+    "  providers   List services or install a provider's managed runtime.",
     "  serve       Start the local HTTP API server.",
     "",
     "Options:",
@@ -130,6 +134,30 @@ export async function runCli(args: readonly string[], options: CliOptions = {}) 
     await server.finished
     return 0
   }
+  if (args[1] === "install") {
+    const provider = args[2]
+    const flags = args.slice(3)
+    const unknown = flags.find(flag => flag !== "--json")
+    if (!provider || unknown) {
+      io.error(`${unknown ? `Unknown option: ${unknown}` : "provider is required"}\n\n${usage()}`)
+      return 2
+    }
+    const runtimes = options.runtimeService ?? createBuiltInRuntimeService()
+    if (!runtimes.supports(provider)) {
+      io.error(`Provider ${provider} does not require an installable runtime.`)
+      return 2
+    }
+    try {
+      const status = await runtimes.install(provider)
+      io.output(flags.includes("--json")
+        ? JSON.stringify(status, null, 2)
+        : `${provider} runtime installed at ${status.executable_path ?? "unknown path"} (${status.version ?? status.release_version ?? "version unknown"})`)
+      return 0
+    } catch (error) {
+      io.error(`Failed to install ${provider} runtime: ${error instanceof Error ? error.message : "unknown error"}`)
+      return 1
+    }
+  }
   const supported = new Set(["--json", "--probe"])
   const flags = args.slice(1)
   const unknown = flags.find(flag => !supported.has(flag))
@@ -172,5 +200,13 @@ export function isCliEntry(entry: string | undefined, moduleUrl = import.meta.ur
 
 const entry = process.argv[1]
 if (isCliEntry(entry)) {
-  process.exitCode = await runCli(process.argv.slice(2))
+  void runCli(process.argv.slice(2)).then(
+    code => {
+      process.exitCode = code
+    },
+    error => {
+      process.stderr.write(`shortdrama-router failed: ${error instanceof Error ? error.message : "unknown error"}\n`)
+      process.exitCode = 1
+    },
+  )
 }

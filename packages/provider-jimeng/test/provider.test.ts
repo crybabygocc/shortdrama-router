@@ -5,8 +5,22 @@ import path from "node:path"
 import test from "node:test"
 import {
   JimengProvider,
+  jimengRuntimeDefinition,
   type JimengCommandRunner,
 } from "../src/index.js"
+
+test("maps the current platform to the official managed Dreamina artifact", async () => {
+  const release = await jimengRuntimeDefinition.resolve_release({
+    fetch: async () => Response.json({ version: "1.4.17" }),
+    platform: "darwin-arm64",
+  })
+  assert.equal(release.version, "1.4.17")
+  assert.match(release.artifact.url, /dreamina_cli_darwin_arm64$/u)
+  assert.deepEqual(jimengRuntimeDefinition.probe(JSON.stringify({ version: "build-one" })), {
+    compatible: true,
+    version: "build-one",
+  })
+})
 
 const imageHelp = `
 Supported combinations:
@@ -22,7 +36,7 @@ class FakeRunner implements JimengCommandRunner {
 
   async run(args: readonly string[]) {
     this.calls.push([...args])
-    if (args[0] === "--version") return { stdout: "dreamina test-version" }
+    if (args[0] === "--version") return { stdout: JSON.stringify({ version: "test-build" }) }
     if (args[0] === "user_credit") {
       return { stdout: JSON.stringify({ total_credit: 37, vip_level: "advanced" }) }
     }
@@ -108,10 +122,10 @@ test("reports Jimeng as not configured before local OAuth state exists", async (
   assert.equal((await provider.getAuthorizationStatus()).state, "not_configured")
 })
 
-test("describes the Dreamina dependency without inventing compatibility evidence", async () => {
+test("recognizes the Dreamina dependency version before making it available", async () => {
   const provider = new JimengProvider({ runner: new FakeRunner() })
   const dependency = (await provider.getDependencyStatuses({ probe: true }))[0]
   assert.equal(dependency?.available, true)
-  assert.equal(dependency?.compatible, null)
-  assert.equal(dependency?.version, "dreamina test-version")
+  assert.equal(dependency?.compatible, true)
+  assert.equal(dependency?.version, "test-build")
 })

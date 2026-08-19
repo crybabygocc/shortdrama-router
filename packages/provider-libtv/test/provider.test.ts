@@ -4,10 +4,22 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import {
+  libtvRuntimeDefinition,
   LibTvProvider,
   MemoryLibTvConfiguration,
   type LibTvCommandRunner,
 } from "../src/index.js"
+
+test("pins the managed LibTV runtime to the adapter-compatible release", async () => {
+  const release = await libtvRuntimeDefinition.resolve_release({
+    fetch,
+    platform: "darwin-arm64",
+  })
+  assert.equal(release.version, "1.0.2")
+  assert.match(release.artifact.url, /\/1\.0\.2\/libtv-macos-arm64\.zip$/u)
+  assert.equal(libtvRuntimeDefinition.probe("1.0.2").compatible, true)
+  assert.equal(libtvRuntimeDefinition.probe("1.1.0").compatible, false)
+})
 
 class FakeRunner implements LibTvCommandRunner {
   readonly calls: string[][] = []

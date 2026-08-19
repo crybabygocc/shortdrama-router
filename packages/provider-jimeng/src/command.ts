@@ -8,6 +8,7 @@ import {
   JimengUnavailableError,
   JimengUpstreamError,
 } from "./errors.js"
+import { jimengManagedCliPath } from "./runtime.js"
 
 export interface JimengCommandResult {
   readonly stdout: string
@@ -24,8 +25,10 @@ export interface JimengProcessRunnerOptions {
 }
 
 function defaultCliPath() {
+  const managed = jimengManagedCliPath()
+  if (existsSync(managed)) return managed
   const installed = path.join(homedir(), ".local", "bin", "dreamina")
-  return existsSync(installed) ? installed : "dreamina"
+  return existsSync(installed) ? installed : managed
 }
 
 function commandFailure(output: string) {
