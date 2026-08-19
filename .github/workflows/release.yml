@@ -6,19 +6,18 @@ on:
       - "v*"
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   standalone:
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
@@ -43,10 +42,54 @@ jobs:
           path: shortdrama-router-*
           if-no-files-found: error
 
-  github-release:
+  npm-publish:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: standalone
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - run: npm install --global npm@12.0.1
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - name: Validate tag and published version
+        id: publish-check
+        shell: bash
+        run: |
+          package_version="$(node -p 'require("./packages/sdk/package.json").version')"
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [[ "$package_version" != "$tag_version" ]]; then
+            echo "Tag v${tag_version} does not match package version ${package_version}." >&2
+            exit 1
+          fi
+
+          if published_head="$(npm view "shortdrama-router@${package_version}" gitHead 2>/dev/null)"; then
+            if [[ -z "$published_head" || "$published_head" != "$GITHUB_SHA" ]]; then
+              echo "shortdrama-router@${package_version} already exists at a different or unknown commit." >&2
+              exit 1
+            fi
+            echo "shortdrama-router@${package_version} is already published from ${GITHUB_SHA}."
+            echo "should-publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should-publish=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Publish npm package with OIDC
+        if: steps.publish-check.outputs.should-publish == 'true'
+        run: npm publish -w packages/sdk --access public
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [standalone, npm-publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:

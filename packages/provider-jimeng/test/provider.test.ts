@@ -72,9 +72,11 @@ class FakeRunner implements JimengCommandRunner {
   }
 }
 
-test("uses Jimeng OAuth Device Flow without browser cookies", async () => {
+test("uses Jimeng OAuth Device Flow without browser cookies", async t => {
+  const configDir = await mkdtemp(path.join(tmpdir(), "jimeng-provider-oauth-"))
+  t.after(() => rm(configDir, { recursive: true }))
   const runner = new FakeRunner()
-  const provider = new JimengProvider({ runner })
+  const provider = new JimengProvider({ configDir, runner })
   const request = await provider.beginAuthorization("oauth")
   assert.match(request.login_url, /^https:\/\/jimeng\.jianying\.com\/ai-tool\/cli-auth/u)
   const status = await provider.completeAuthorization({
