@@ -6,6 +6,7 @@ export type AuthorizationAction = "status" | "begin" | "complete" | "cancel" | "
 
 export type AuthorizationState =
   | "not_configured"
+  | "pending"
   | "configured"
   | "valid"
   | "expiring"

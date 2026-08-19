@@ -2,6 +2,7 @@ import {
   getManagedRuntimeStatus,
   installManagedRuntime,
   managedRuntimePath,
+  RuntimeIntegrityError,
   type ProviderRuntimeDefinition,
   type ProviderRuntimeInstallOptions,
   type ProviderRuntimeStatusOptions,
@@ -10,14 +11,30 @@ import {
 
 const downloadBase = "https://lf3-static.bytednsdoc.com/obj/eden-cn/psj_hupthlyk/ljhwZthlaukjlkulzlp/dreamina_cli_beta"
 const versionUrl = "https://lf3-static.bytednsdoc.com/obj/eden-cn/psj_hupthlyk/ljhwZthlaukjlkulzlp/version.json"
+const supportedVersion = "1.4.17"
 
-const artifacts: Readonly<Record<RuntimePlatform, string | undefined>> = {
-  "darwin-arm64": "dreamina_cli_darwin_arm64",
-  "darwin-x64": "dreamina_cli_darwin_amd64",
-  "linux-arm64": "dreamina_cli_linux_arm64",
-  "linux-x64": "dreamina_cli_linux_amd64",
+const artifacts: Readonly<Record<RuntimePlatform, { readonly name: string; readonly sha256: string } | undefined>> = {
+  "darwin-arm64": { name: "dreamina_cli_darwin_arm64", sha256: "a9dadf84a3708493cb64e15ec3bcaa714604b62e2e917e8114b7236e5809cdeb" },
+  "darwin-x64": { name: "dreamina_cli_darwin_amd64", sha256: "8dd15c549799342ee3e2c5a19d590f7aa42e6940a7327b8e8d174e976280a99f" },
+  "linux-arm64": { name: "dreamina_cli_linux_arm64", sha256: "23ffc16a3f3569c7d2985baee843217b73034f0fe649a6dda517b6d95d5beb9c" },
+  "linux-x64": { name: "dreamina_cli_linux_amd64", sha256: "78e49e845b70b17c42015f9214a295564c9bf9048f8a5745429c18566c270ff3" },
   "win32-arm64": undefined,
-  "win32-x64": "dreamina_cli_windows_amd64.exe",
+  "win32-x64": { name: "dreamina_cli_windows_amd64.exe", sha256: "7b88b1e770cd4410d1ac6779057adf7e9e0f6a1a00bc4fb2b9a564db8ddb999e" },
+}
+
+function trustedRelease(platform: RuntimePlatform, version: string) {
+  const artifact = artifacts[platform]
+  if (!artifact || version !== supportedVersion) return undefined
+  return {
+    artifact: {
+      archive: "binary" as const,
+      executable_sha256: artifact.sha256,
+      maximum_bytes: 128 * 1024 * 1024,
+      sha256: artifact.sha256,
+      url: `${downloadBase}/${artifact.name}`,
+    },
+    version,
+  }
 }
 
 function reportedVersion(output: string) {
@@ -61,14 +78,14 @@ export const jimengRuntimeDefinition: ProviderRuntimeDefinition = {
     if (typeof value.version !== "string" || !value.version.trim()) {
       throw new Error("Dreamina version discovery returned an invalid response")
     }
-    return {
-      artifact: {
-        archive: "binary",
-        maximum_bytes: 128 * 1024 * 1024,
-        url: `${downloadBase}/${artifact}`,
-      },
-      version: value.version.trim(),
+    const release = trustedRelease(options.platform, value.version.trim())
+    if (!release) {
+      throw new RuntimeIntegrityError(`Dreamina CLI ${value.version.trim()} has no trusted artifact digest in this router release`)
     }
+    return release
+  },
+  resolve_trusted_release(options) {
+    return trustedRelease(options.platform, options.version)
   },
   version_command: ["--version"],
 }

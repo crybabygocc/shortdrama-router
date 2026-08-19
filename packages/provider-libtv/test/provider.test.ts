@@ -1,5 +1,5 @@
 import assert from "node:assert/strict"
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -37,6 +37,29 @@ test("does not fall back to a legacy user-directory LibTV CLI", { skip: process.
   }
 })
 
+test("starts the CLI web login, returns its URL and uses the configured credential directory", { skip: process.platform === "win32" }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "libtv-web-login-runner-"))
+  const cliPath = path.join(directory, "libtv")
+  const configDir = path.join(directory, "credentials")
+  await mkdir(configDir)
+  await writeFile(cliPath, [
+    "#!/bin/sh",
+    "printf '%s' \"$LIBTV_CONFIG_DIR\" > \"$LIBTV_CONFIG_DIR/seen-config-dir\"",
+    "printf 'https://www.liblib.tv/zh?callback_url=http%%3A%%2F%%2F127.0.0.1%%3A5002%%2Fcallback\\n' >&2",
+    "trap 'exit 2' TERM INT",
+    "while :; do sleep 1; done",
+  ].join("\n"), { mode: 0o755 })
+  try {
+    const session = await new LibTvProcessRunner({ cliPath, configDir, timeoutMs: 5_000 }).beginWebAuthorization()
+    assert.match(session.login_url, /^https:\/\/www\.liblib\.tv\/zh\?/u)
+    assert.equal(await readFile(path.join(configDir, "seen-config-dir"), "utf8"), configDir)
+    session.cancel()
+    await assert.rejects(session.completed)
+  } finally {
+    await rm(directory, { force: true, recursive: true })
+  }
+})
+
 test("pins the managed LibTV runtime to the adapter-compatible release", async () => {
   const release = await libtvRuntimeDefinition.resolve_release({
     fetch,
@@ -44,6 +67,8 @@ test("pins the managed LibTV runtime to the adapter-compatible release", async (
   })
   assert.equal(release.version, "1.0.2")
   assert.match(release.artifact.url, /\/1\.0\.2\/libtv-macos-arm64\.zip$/u)
+  assert.equal(release.artifact.sha256, "f8a320e9e34b266699410f8ddd00f54004304449cad2ec03367401dac42bba61")
+  assert.equal(release.artifact.executable_sha256, "8605ff53e9f2185f09ba59597ba811e12d90294411ae15710e334be56a4d6e34")
   assert.equal(libtvRuntimeDefinition.probe("1.0.2").compatible, true)
   assert.equal(libtvRuntimeDefinition.probe("1.1.0").compatible, false)
 })
@@ -117,6 +142,82 @@ test("discovers live LibTV models and probes local authorization", async () => {
   } finally {
     await rm(configDir, { force: true, recursive: true })
   }
+})
+
+test("starts, reports and completes LibTV web authorization without a terminal", async () => {
+  const configDir = await mkdtemp(path.join(tmpdir(), "libtv-provider-web-login-"))
+  let finish!: (result: { stdout: string }) => void
+  let cancelled = false
+  const completed = new Promise<{ stdout: string }>(resolve => {
+    finish = resolve
+  })
+  const runner: LibTvCommandRunner = {
+    async beginWebAuthorization() {
+      return {
+        cancel() {
+          cancelled = true
+        },
+        completed,
+        login_url: "https://www.liblib.tv/zh?callback_url=http%3A%2F%2F127.0.0.1%3A5000%2Fcallback",
+      }
+    },
+    async run(args) {
+      if (args[0] === "account") return { stdout: JSON.stringify({ user: { id: 1 } }) }
+      if (args[0] === "logout") return { stdout: "" }
+      throw new Error(`unexpected command: ${args.join(" ")}`)
+    },
+  }
+  try {
+    const provider = new LibTvProvider({ configDir, randomId: () => "libtv-auth-1", runner })
+    assert.deepEqual(provider.metadata.capabilities.authorization_methods, [{
+      actions: ["status", "begin", "complete", "cancel", "clear"],
+      management: "managed",
+      method: "oauth",
+    }])
+    const request = await provider.beginAuthorization("oauth")
+    assert.equal(request.authorization_id, "libtv-auth-1")
+    assert.match(request.login_url, /^https:\/\/www\.liblib\.tv\/zh\?/u)
+    assert.equal((await provider.getAuthorizationStatus({ probe: true })).state, "pending")
+
+    await writeFile(path.join(configDir, "credentials.json"), "{}")
+    finish({ stdout: path.join(configDir, "credentials.json") })
+    await new Promise(resolve => setImmediate(resolve))
+    const status = await provider.completeAuthorization({
+      authorization_id: request.authorization_id,
+      method: "oauth",
+    })
+    assert.equal(status.state, "valid")
+    assert.equal(cancelled, false)
+  } finally {
+    await rm(configDir, { force: true, recursive: true })
+  }
+})
+
+test("cancels a pending LibTV web authorization", async () => {
+  let cancelled = false
+  let finish!: (result: { stdout: string }) => void
+  const completed = new Promise<{ stdout: string }>(resolve => {
+    finish = resolve
+  })
+  const runner: LibTvCommandRunner = {
+    async beginWebAuthorization() {
+      return {
+        cancel() {
+          cancelled = true
+          finish({ stdout: "" })
+        },
+        completed,
+        login_url: "https://www.liblib.tv/zh?callback_url=http%3A%2F%2F127.0.0.1%3A5001%2Fcallback",
+      }
+    },
+    async run() {
+      return { stdout: "" }
+    },
+  }
+  const provider = new LibTvProvider({ randomId: () => "libtv-auth-cancel", runner })
+  const request = await provider.beginAuthorization("oauth")
+  await provider.cancelAuthorization(request.authorization_id)
+  assert.equal(cancelled, true)
 })
 
 test("runs LibTV image and video nodes to terminal results", async () => {

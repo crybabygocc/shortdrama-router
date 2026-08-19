@@ -1,12 +1,13 @@
 import { spawn } from "node:child_process"
 import path from "node:path"
+import { RuntimeUnavailableError, verifyManagedRuntimeIntegrity } from "@shortdrama-router/runtime"
 import {
   JimengAuthenticationError,
   JimengPlanError,
   JimengUnavailableError,
   JimengUpstreamError,
 } from "./errors.js"
-import { jimengManagedCliPath } from "./runtime.js"
+import { jimengManagedCliPath, jimengRuntimeDefinition } from "./runtime.js"
 
 export interface JimengCommandResult {
   readonly stdout: string
@@ -34,7 +35,9 @@ function commandFailure(output: string) {
 export class JimengProcessRunner implements JimengCommandRunner {
   readonly #cliPath: string
   readonly #maxOutputBytes: number
+  readonly #runtimeRootDir: string | undefined
   readonly #timeoutMs: number
+  readonly #verifyManagedRuntime: boolean
 
   constructor(options: JimengProcessRunnerOptions = {}) {
     if (options.cliPath !== undefined && !path.isAbsolute(options.cliPath)) {
@@ -42,10 +45,23 @@ export class JimengProcessRunner implements JimengCommandRunner {
     }
     this.#cliPath = options.cliPath ?? jimengManagedCliPath(options.runtimeRootDir)
     this.#maxOutputBytes = options.maxOutputBytes ?? 8 * 1024 * 1024
+    this.#runtimeRootDir = options.runtimeRootDir
     this.#timeoutMs = options.timeoutMs ?? 30 * 60_000
+    this.#verifyManagedRuntime = options.cliPath === undefined
   }
 
-  run(args: readonly string[], signal?: AbortSignal) {
+  async run(args: readonly string[], signal?: AbortSignal) {
+    if (this.#verifyManagedRuntime) {
+      try {
+        await verifyManagedRuntimeIntegrity(jimengRuntimeDefinition, {
+          ...(this.#runtimeRootDir === undefined ? {} : { rootDir: this.#runtimeRootDir }),
+          ...(signal === undefined ? {} : { signal }),
+        })
+      } catch (error) {
+        if (error instanceof RuntimeUnavailableError) throw new JimengUnavailableError()
+        throw error
+      }
+    }
     return new Promise<JimengCommandResult>((resolve, reject) => {
       if (signal?.aborted) {
         reject(signal.reason)

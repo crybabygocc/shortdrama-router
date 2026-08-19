@@ -1,5 +1,6 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm } from "node:fs/promises"
+import { createHash } from "node:crypto"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
@@ -8,8 +9,17 @@ import {
   detectRuntimePlatform,
   getManagedRuntimeStatus,
   installManagedRuntime,
+  managedRuntimePath,
+  RuntimeIntegrityError,
+  verifyManagedRuntimeIntegrity,
   type ProviderRuntimeDefinition,
 } from "../src/index.js"
+
+const fixtureScript = Buffer.from("#!/bin/sh\nprintf '1.2.3\\n'\n")
+
+function sha256(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex")
+}
 
 function storedZip(name: string, contents: Buffer) {
   const filename = Buffer.from(name)
@@ -37,6 +47,16 @@ function storedZip(name: string, contents: Buffer) {
 }
 
 function definition(archive: "binary" | "zip"): ProviderRuntimeDefinition {
+  const artifactBytes = archive === "binary" ? fixtureScript : storedZip("bundle/fixture", fixtureScript)
+  const release = {
+    artifact: {
+      archive,
+      executable_sha256: sha256(fixtureScript),
+      sha256: sha256(artifactBytes),
+      url: `https://runtime.test/${archive}`,
+    },
+    version: "1.2.3",
+  } as const
   return {
     display_name: "Fixture runtime",
     executable: "fixture",
@@ -47,13 +67,10 @@ function definition(archive: "binary" | "zip"): ProviderRuntimeDefinition {
       return { compatible: version === "1.2.3", version }
     },
     async resolve_release() {
-      return {
-        artifact: {
-          archive,
-          url: `https://runtime.test/${archive}`,
-        },
-        version: "1.2.3",
-      }
+      return release
+    },
+    resolve_trusted_release(options) {
+      return options.version === release.version ? release : undefined
     },
     version_command: [],
   }
@@ -69,11 +86,10 @@ test("detects supported platforms and platform-specific data roots", () => {
 
 test("installs and probes binary and ZIP provider runtimes", { skip: process.platform === "win32" }, async () => {
   const rootDir = await mkdtemp(path.join(tmpdir(), "shortdrama-runtime-"))
-  const script = Buffer.from("#!/bin/sh\nprintf '1.2.3\\n'\n")
   try {
     for (const archive of ["binary", "zip"] as const) {
       const runtime = definition(archive)
-      const body = archive === "binary" ? script : storedZip("bundle/fixture", script)
+      const body = archive === "binary" ? fixtureScript : storedZip("bundle/fixture", fixtureScript)
       const installed = await installManagedRuntime(runtime, {
         fetch: async () => new Response(body),
         platform: process.arch === "arm64" ? "darwin-arm64" : "darwin-x64",
@@ -81,12 +97,50 @@ test("installs and probes binary and ZIP provider runtimes", { skip: process.pla
       })
       assert.equal(installed.state, "installed")
       assert.equal(installed.compatible, true)
+      assert.equal(installed.integrity_verified, true)
       assert.equal(installed.version, "1.2.3")
       assert.equal((await getManagedRuntimeStatus(runtime, {
         platform: process.arch === "arm64" ? "darwin-arm64" : "darwin-x64",
         rootDir,
       })).state, "installed")
     }
+  } finally {
+    await rm(rootDir, { force: true, recursive: true })
+  }
+})
+
+test("rejects a runtime whose downloaded artifact digest does not match", async () => {
+  const rootDir = await mkdtemp(path.join(tmpdir(), "shortdrama-runtime-reject-"))
+  try {
+    await assert.rejects(
+      installManagedRuntime(definition("binary"), {
+        fetch: async () => new Response(Buffer.from("not the trusted executable")),
+        platform: "darwin-arm64",
+        rootDir,
+      }),
+      RuntimeIntegrityError,
+    )
+  } finally {
+    await rm(rootDir, { force: true, recursive: true })
+  }
+})
+
+test("detects replacement of an installed managed executable before execution", { skip: process.platform === "win32" }, async () => {
+  const rootDir = await mkdtemp(path.join(tmpdir(), "shortdrama-runtime-tampered-"))
+  const runtime = definition("binary")
+  const platform = process.arch === "arm64" ? "darwin-arm64" : "darwin-x64"
+  try {
+    await installManagedRuntime(runtime, {
+      fetch: async () => new Response(fixtureScript),
+      platform,
+      rootDir,
+    })
+    await writeFile(managedRuntimePath(runtime, rootDir), "#!/bin/sh\nprintf 'tampered\\n'\n", { mode: 0o755 })
+    const status = await getManagedRuntimeStatus(runtime, { platform, rootDir })
+    assert.equal(status.state, "invalid")
+    assert.equal(status.integrity_verified, false)
+    assert.equal(status.reason_code, "runtime_integrity_failed")
+    await assert.rejects(verifyManagedRuntimeIntegrity(runtime, { platform, rootDir }), RuntimeIntegrityError)
   } finally {
     await rm(rootDir, { force: true, recursive: true })
   }

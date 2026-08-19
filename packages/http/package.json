@@ -1,6 +1,6 @@
 {
   "name": "@shortdrama-router/http",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Fetch-compatible HTTP API for shortdrama-router",
   "type": "module",
   "license": "MIT",
@@ -16,8 +16,8 @@
     }
   },
   "dependencies": {
-    "@shortdrama-router/core": "0.5.0",
-    "@shortdrama-router/runtime": "0.5.0"
+    "@shortdrama-router/core": "0.6.0",
+    "@shortdrama-router/runtime": "0.6.0"
   },
   "scripts": {
     "build": "tsc -b --pretty false",

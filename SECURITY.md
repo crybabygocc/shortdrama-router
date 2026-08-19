@@ -22,8 +22,10 @@ Local session adapters use a browser session that the user authorizes on the pro
 
 - Download executable runtimes only after an explicit provider-install action.
 - Use fixed official HTTPS hosts and a platform allowlist; never accept an arbitrary runtime URL from an API request.
+- Pin trusted SHA-256 values for each supported platform and verify both the downloaded artifact and extracted executable before installation.
 - Extract only the expected executable from provider ZIP files and enforce a bounded download size.
 - Store managed executables under shortdrama-router's application data directory and invoke them by absolute path without a shell.
+- Re-verify the installed executable against the pinned release metadata before every managed launch; reject missing metadata, unknown releases and digest mismatches.
 - Require a recognizable version and successful compatibility probe before reporting the dependency as usable.
 - Do not execute upstream installer scripts or let runtime installation modify PATH, shell profiles or unrelated application files.
 

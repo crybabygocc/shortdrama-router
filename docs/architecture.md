@@ -77,13 +77,15 @@ Authorization inspection distinguishes configured, verified, expiring and expire
 
 ## Managed official CLI providers
 
-The Jimeng and LibTV adapters execute their official local CLIs as argument arrays without a shell. A user-selected runtime installation downloads the platform artifact from the provider's official host into shortdrama-router's application data directory. The adapter executes only that absolute managed path and does not modify PATH or shell profiles. It does not discover PATH entries or legacy user-directory CLIs. An explicit application-supplied CLI path remains available for development and managed deployments.
+The Jimeng and LibTV adapters execute their official local CLIs as argument arrays without a shell. A user-selected runtime installation downloads the platform artifact from the provider's official host into shortdrama-router's application data directory. Each provider pins the trusted artifact and extracted-executable SHA-256 for every supported platform. Installation verifies both values before execution, and managed command runners re-verify the installed executable before every launch. Unknown releases and mismatches fail closed. The adapter executes only that absolute managed path and does not modify PATH or shell profiles. It does not discover PATH entries or legacy user-directory CLIs. An explicit application-supplied CLI path remains available for development and managed deployments and is outside managed-runtime verification.
 
 The SDK's `runtimeRootDir` option is shared by the built-in providers and the server's runtime-management service. Default deployments therefore require no path wiring: an explicit install action makes the provider runtime available at the exact path the adapter will execute. A custom router or runtime service remains responsible for its own injected components.
 
 The npm package is the embeddable SDK. GitHub Releases additionally contain a Node.js single-executable application built from the same SDK, so end users do not need Node.js or npm. Runtime installation is exposed through both that executable and the loopback management API.
 
 CLI dependencies must return a recognizable version and pass their adapter's compatibility probe. Merely finding an executable is insufficient to mark provider models available.
+
+LibTV Web OAuth is managed through the common provider authorization lifecycle. The adapter starts the official CLI's loopback login process without opening a browser itself, returns its official login URL to the local host, reports `pending` until the callback completes, and supports cancellation. Login, account inspection and logout share one explicit `LIBTV_CONFIG_DIR` so credentials never enter router requests.
 
 Jimeng maps router image/video jobs to the official `dreamina` asynchronous submit and query commands. LibTV maps jobs to uniquely named image/video nodes on a configured user canvas and waits for the official `libtv node --run` terminal JSON. Neither adapter estimates credits when the official command output does not supply a stable per-request estimate.
 

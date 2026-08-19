@@ -6,7 +6,7 @@
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：`0.5.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型与依赖发现、分方式授权状态、严格受管理的官方 CLI 运行时、本地 HTTP 服务、npm SDK 和无需 npm 的独立程序。
+> 当前状态：`0.6.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型与依赖发现、分方式授权状态、带完整性校验的官方 CLI 运行时、本地 HTTP 服务、npm SDK 和无需 npm 的独立程序。
 
 ## 为什么使用 shortdrama-router
 
@@ -51,7 +51,7 @@ OpenRouter 的视频接口更适合多模型路由。项目沿用它的多 provi
 
 普通用户不需要安装 Node.js、npm、Dreamina CLI 或 LibTV CLI。GitHub Releases 提供包含 Node.js 运行时的 macOS、Linux 和 Windows 独立程序；下载对应平台制品后即可直接启动本地 API。
 
-即梦和 LibTV 插件需要官方 CLI。用户明确安装对应插件时，`shortdrama-router` 会识别当前平台、从官方地址下载 CLI，并安装到自己的应用数据目录。程序始终使用这个受管理的绝对路径，不修改 `PATH`、shell profile 或其他应用配置，也不会回退到用户以前安装在 `~/.local/bin`、`~/.libtv` 或 `PATH` 中的 CLI。小云雀直接使用 HTTP 能力，不需要额外运行时。
+即梦和 LibTV 插件需要官方 CLI。用户明确安装对应插件时，`shortdrama-router` 会识别当前平台、从官方地址下载 CLI，使用 router 固定的可信 SHA-256 校验制品和解压后的可执行文件，再安装到自己的应用数据目录。后续每次执行前都会重新验证可执行文件，校验失败时拒绝运行。程序始终使用这个受管理的绝对路径，不修改 `PATH`、shell profile 或其他应用配置，也不会回退到用户以前安装在 `~/.local/bin`、`~/.libtv` 或 `PATH` 中的 CLI。小云雀直接使用 HTTP 能力，不需要额外运行时。
 
 独立程序中的 Provider 安装操作可以由宿主产品的插件界面调用，也可以直接由本地管理员执行：
 
@@ -68,6 +68,8 @@ POST /api/v1/providers/{provider}/runtime
 ```
 
 安装后仍需按 provider 的官方流程完成账号授权。普通业务只需要调用安装、授权和生成接口，不需要读取 CLI 路径或实现任何回退逻辑。`DREAMINA_CLI_PATH` 和 `LIBTV_CLI_PATH` 仅作为开发者显式覆盖。
+
+从 `0.5.x` 升级时，旧安装没有可信摘要元数据，会被 `0.6.0` 标记为 `runtime_integrity_failed`；用户重新执行一次对应 Provider 安装即可完成受验证迁移，不影响已有账号凭据。
 
 ## npm 使用
 
@@ -200,7 +202,7 @@ curl http://localhost:8080/api/v1/videos \
 LibTV 与即梦都通过各自官方本地 CLI 工作：
 
 - 安装 Provider 插件时由 router 自动下载对应平台的 CLI，不要求用户另外安装 npm 或修改系统 PATH；
-- LibTV：完成安装后执行官方 OAuth 登录，并通过配置 API 选择生成节点所在画布；
+- LibTV：完成安装后可由宿主通过通用授权 API 发起官方 Web OAuth，用户在浏览器完成登录后，再通过配置 API 选择生成节点所在画布，全程不需要终端；
 - 即梦：完成安装后使用官方 OAuth Device Flow。即梦官方 CLI 当前仅向高级会员开放生成，普通 Web 登录仍可使用官网，但不会获得 CLI 生成权限。
 
 ## 服务与授权状态
@@ -220,7 +222,7 @@ LibTV 与即梦都通过各自官方本地 CLI 工作：
 - `GET /api/v1/providers/{provider}/runtime`：查询由 router 管理的官方 CLI 运行时；
 - `POST /api/v1/providers/{provider}/runtime`：按当前平台下载并安装官方 CLI 运行时。
 
-授权状态包括 `not_configured`、`configured`、`valid`、`expiring`、`expired` 和 `error`。无法可靠验证时保持 `configured`，不会猜测为有效。
+授权状态包括 `not_configured`、`pending`、`configured`、`valid`、`expiring`、`expired` 和 `error`。无法可靠验证时保持 `configured`，不会猜测为有效。
 
 ## 费用与会员额度
 
@@ -237,7 +239,7 @@ LibTV 与即梦都通过各自官方本地 CLI 工作：
 当前与首批目标包括：
 
 - `xiaoyunque/*`：已实现用户主动登录后创建官方 Access Key、Seedream/Nova 生图、Seedance 生视频及音频参考、Seed Audio 语音/音效/音乐生成、本地 Web 会话授权、模型发现、授权状态、任务提交和轮询；
-- `libtv/*`：已通过受管理的官方 `libtv` CLI 接入实时模型发现、OAuth 本地状态、项目发现与选择、生图和生视频；每次生成在用户选择的 LibTV 项目中创建独立节点；
+- `libtv/*`：已通过受管理的官方 `libtv` CLI 接入 Web OAuth、实时模型发现、项目发现与选择、生图和生视频；每次生成在用户选择的 LibTV 项目中创建独立节点；
 - `jimeng/*`：已通过受管理的官方 `dreamina` CLI 接入 OAuth Device Flow、积分授权探测、图像与视频模型发现、异步提交和结果查询；
 - `kling/*`：路线图，尚未包含在当前 npm 版本中。
 

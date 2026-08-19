@@ -10,7 +10,7 @@ import {
   type ProviderAdapter,
 } from "../src/index.js"
 
-test("uses the custom runtime root for server installation status", { skip: process.platform === "win32" }, async () => {
+test("uses the custom runtime root and rejects an unverified executable", { skip: process.platform === "win32" }, async () => {
   const runtimeRootDir = await mkdtemp(path.join(tmpdir(), "shortdrama-server-root-"))
   const executable = jimengManagedCliPath(runtimeRootDir)
   await mkdir(path.dirname(executable), { recursive: true })
@@ -21,12 +21,14 @@ test("uses the custom runtime root for server installation status", { skip: proc
     assert.equal(response.status, 200)
     const status = await response.json() as {
       executable_path: string
+      integrity_verified: boolean
+      reason_code: string
       state: string
-      version: string
     }
     assert.equal(status.executable_path, executable)
-    assert.equal(status.state, "installed")
-    assert.equal(status.version, "server-managed")
+    assert.equal(status.state, "invalid")
+    assert.equal(status.integrity_verified, false)
+    assert.equal(status.reason_code, "runtime_integrity_failed")
   } finally {
     await server.close()
     await rm(runtimeRootDir, { force: true, recursive: true })

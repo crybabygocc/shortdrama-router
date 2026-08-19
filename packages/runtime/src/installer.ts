@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
-import { constants } from "node:fs"
+import { createHash } from "node:crypto"
+import { constants, createReadStream } from "node:fs"
 import {
   access,
   chmod,
@@ -27,11 +28,52 @@ const metadataName = "runtime.json"
 const defaultMaximumBytes = 256 * 1024 * 1024
 
 interface RuntimeMetadata {
+  readonly artifact_sha256: string
+  readonly executable_sha256: string
   readonly installed_at: string
   readonly platform: RuntimePlatform
   readonly release_version: string
   readonly source_url: string
   readonly version?: string
+}
+
+const sha256Pattern = /^[a-f0-9]{64}$/u
+
+export class RuntimeIntegrityError extends Error {
+  readonly code = "runtime_integrity_failed"
+
+  constructor(message: string) {
+    super(message)
+    this.name = "RuntimeIntegrityError"
+  }
+}
+
+export class RuntimeUnavailableError extends Error {
+  readonly code = "runtime_not_installed"
+
+  constructor(message: string) {
+    super(message)
+    this.name = "RuntimeUnavailableError"
+  }
+}
+
+function sha256(bytes: Uint8Array) {
+  return createHash("sha256").update(bytes).digest("hex")
+}
+
+async function sha256File(filePath: string, signal?: AbortSignal) {
+  const hash = createHash("sha256")
+  const stream = createReadStream(filePath, signal === undefined ? {} : { signal })
+  for await (const chunk of stream) hash.update(chunk)
+  return hash.digest("hex")
+}
+
+function trustedDigest(value: string, label: string) {
+  const normalized = value.toLowerCase()
+  if (!sha256Pattern.test(normalized)) {
+    throw new RuntimeIntegrityError(`${label} does not provide a valid SHA-256 digest`)
+  }
+  return normalized
 }
 
 function unsupportedStatus(definition: ProviderRuntimeDefinition, platform: string): ProviderRuntimeStatus {
@@ -152,7 +194,11 @@ async function readMetadata(providerDirectory: string): Promise<RuntimeMetadata 
   try {
     const value = JSON.parse(await readFile(path.join(providerDirectory, metadataName), "utf8")) as Partial<RuntimeMetadata>
     if (
-      typeof value.installed_at !== "string"
+      typeof value.artifact_sha256 !== "string"
+      || !sha256Pattern.test(value.artifact_sha256)
+      || typeof value.executable_sha256 !== "string"
+      || !sha256Pattern.test(value.executable_sha256)
+      || typeof value.installed_at !== "string"
       || typeof value.platform !== "string"
       || typeof value.release_version !== "string"
       || typeof value.source_url !== "string"
@@ -161,6 +207,61 @@ async function readMetadata(providerDirectory: string): Promise<RuntimeMetadata 
   } catch {
     return undefined
   }
+}
+
+async function verifiedInstallation(
+  definition: ProviderRuntimeDefinition,
+  providerDirectory: string,
+  executablePath: string,
+  signal?: AbortSignal,
+) {
+  const metadata = await readMetadata(providerDirectory)
+  if (!metadata) {
+    throw new RuntimeIntegrityError(`${definition.display_name} runtime has no trusted installation metadata; reinstall it`)
+  }
+  const release = definition.resolve_trusted_release({
+    platform: metadata.platform,
+    version: metadata.release_version,
+  })
+  if (!release) {
+    throw new RuntimeIntegrityError(`${definition.display_name} ${metadata.release_version} is not a trusted release`)
+  }
+  const artifactSha256 = trustedDigest(release.artifact.sha256, `${definition.display_name} artifact`)
+  const executableSha256 = trustedDigest(release.artifact.executable_sha256, `${definition.display_name} executable`)
+  if (metadata.artifact_sha256 !== artifactSha256 || metadata.executable_sha256 !== executableSha256) {
+    throw new RuntimeIntegrityError(`${definition.display_name} runtime metadata does not match the trusted release`)
+  }
+  let installedSha256: string
+  try {
+    installedSha256 = await sha256File(executablePath, signal)
+  } catch {
+    if (signal?.aborted) throw signal.reason
+    throw new RuntimeIntegrityError(`${definition.display_name} runtime could not be read for integrity verification`)
+  }
+  if (installedSha256 !== executableSha256) {
+    throw new RuntimeIntegrityError(`${definition.display_name} runtime failed SHA-256 verification`)
+  }
+  return { artifactSha256, executableSha256, metadata }
+}
+
+export async function verifyManagedRuntimeIntegrity(
+  definition: ProviderRuntimeDefinition,
+  options: ProviderRuntimeStatusOptions = {},
+) {
+  const detected = options.platform ?? detectRuntimePlatform()
+  const platform = resolvedPlatform(definition, options.platform)
+  if (!platform) {
+    throw new RuntimeIntegrityError(`${definition.display_name} does not support ${detected ?? `${process.platform}-${process.arch}`}`)
+  }
+  const rootDir = path.resolve(options.rootDir ?? defaultRuntimeRoot())
+  const providerDirectory = path.join(rootDir, definition.id)
+  const executablePath = managedRuntimePath(definition, rootDir)
+  try {
+    await access(executablePath, process.platform === "win32" ? constants.F_OK : constants.X_OK)
+  } catch {
+    throw new RuntimeUnavailableError(`${definition.display_name} runtime is not installed`)
+  }
+  return verifiedInstallation(definition, providerDirectory, executablePath, options.signal)
 }
 
 export async function getManagedRuntimeStatus(
@@ -188,13 +289,17 @@ export async function getManagedRuntimeStatus(
   }
   const metadata = await readMetadata(providerDirectory)
   try {
+    const integrity = await verifiedInstallation(definition, providerDirectory, executablePath, options.signal)
     const probe = await probeExecutable(definition, executablePath, metadata?.release_version, options.signal)
     return {
+      artifact_sha256: integrity.artifactSha256,
       compatible: probe.compatible,
       executable_path: executablePath,
+      executable_sha256: integrity.executableSha256,
       id: definition.id,
       ...(metadata?.installed_at ? { installed_at: metadata.installed_at } : {}),
       managed: true,
+      integrity_verified: true,
       platform,
       ...(probe.reason ? { reason: probe.reason } : {}),
       ...(probe.reason_code ? { reason_code: probe.reason_code } : {}),
@@ -203,7 +308,8 @@ export async function getManagedRuntimeStatus(
       state: probe.compatible ? "installed" : "invalid",
       ...(probe.version ? { version: probe.version } : metadata?.version ? { version: metadata.version } : {}),
     }
-  } catch {
+  } catch (error) {
+    const integrity = error instanceof RuntimeIntegrityError
     return {
       compatible: false,
       executable_path: executablePath,
@@ -211,8 +317,9 @@ export async function getManagedRuntimeStatus(
       ...(metadata?.installed_at ? { installed_at: metadata.installed_at } : {}),
       managed: true,
       platform,
-      reason: `${definition.display_name} runtime could not be executed`,
-      reason_code: "runtime_probe_failed",
+      integrity_verified: false,
+      reason: integrity ? error.message : `${definition.display_name} runtime could not be executed`,
+      reason_code: integrity ? error.code : "runtime_probe_failed",
       ...(metadata?.release_version ? { release_version: metadata.release_version } : {}),
       ...(metadata?.source_url ? { source_url: metadata.source_url } : {}),
       state: "invalid",
@@ -238,9 +345,17 @@ export async function installManagedRuntime(
     maximumBytes: release.artifact.maximum_bytes ?? defaultMaximumBytes,
     ...(options.signal ? { signal: options.signal } : {}),
   })
+  const artifactSha256 = trustedDigest(release.artifact.sha256, `${definition.display_name} artifact`)
+  if (sha256(bytes) !== artifactSha256) {
+    throw new RuntimeIntegrityError(`${definition.display_name} download failed SHA-256 verification`)
+  }
   const executable = release.artifact.archive === "binary"
     ? bytes
     : executableFromZip(bytes, release.artifact.executable_name ?? definition.executable)
+  const executableSha256 = trustedDigest(release.artifact.executable_sha256, `${definition.display_name} executable`)
+  if (sha256(executable) !== executableSha256) {
+    throw new RuntimeIntegrityError(`${definition.display_name} executable failed SHA-256 verification`)
+  }
   const rootDir = path.resolve(options.rootDir ?? defaultRuntimeRoot())
   await mkdir(rootDir, { recursive: true })
   const temporaryDirectory = await mkdtemp(path.join(rootDir, `.${definition.id}-`))
@@ -254,6 +369,8 @@ export async function installManagedRuntime(
     const probe = await probeExecutable(definition, temporaryExecutable, release.version, options.signal)
     if (!probe.compatible) throw new Error(probe.reason ?? `${definition.display_name} runtime is incompatible`)
     const metadata: RuntimeMetadata = {
+      artifact_sha256: artifactSha256,
+      executable_sha256: executableSha256,
       installed_at: (options.now ?? (() => new Date()))().toISOString(),
       platform,
       release_version: release.version,

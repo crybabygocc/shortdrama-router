@@ -8,7 +8,7 @@ import {
   type ProviderAuthorizationCompletion,
   type VideoCreateRequest,
 } from "@shortdrama-router/core"
-import type { ProviderRuntimeService } from "@shortdrama-router/runtime"
+import { RuntimeIntegrityError, type ProviderRuntimeService } from "@shortdrama-router/runtime"
 
 const maximumBodyBytes = 1024 * 1024
 export interface RouterHttpHandlerOptions {
@@ -303,6 +303,13 @@ export function createRouterHttpHandler(
             try {
               return json(await options.providerRuntimes.install(provider, { signal: request.signal }), 201)
             } catch (error) {
+              if (error instanceof RuntimeIntegrityError) {
+                throw new RouterError(error.code, error.message, 502, {
+                  category: "configuration",
+                  provider,
+                  retryable: false,
+                })
+              }
               throw new RouterError(
                 "runtime_install_failed",
                 error instanceof Error ? error.message : `failed to install the ${provider} runtime`,

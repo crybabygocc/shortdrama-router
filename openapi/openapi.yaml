@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: shortdrama-router API
-  version: 0.5.0
+  version: 0.6.0
   description: >-
     OpenAI/OpenRouter-style audio, image and video routing for short-drama creation
     platforms. Models and authorization are discovered per provider.
@@ -129,8 +129,8 @@ paths:
     post:
       tags: [Providers]
       operationId: installProviderRuntime
-      summary: Download and install a provider's official runtime for this platform
-      description: Explicitly installs the executable that the provider will use. Providers do not fall back to PATH or legacy user-directory CLIs.
+      summary: Download, verify and install a provider's official runtime for this platform
+      description: Explicitly installs the executable that the provider will use after its pinned artifact and executable SHA-256 values pass verification. Providers do not fall back to PATH or legacy user-directory CLIs.
       parameters:
         - $ref: '#/components/parameters/ProviderId'
       requestBody:
@@ -669,7 +669,7 @@ components:
           type: [string, 'null']
           enum: [api_key, oauth, browser_session, null]
         state:
-          enum: [not_configured, configured, valid, expiring, expired, error]
+          enum: [not_configured, pending, configured, valid, expiring, expired, error]
         expires_at:
           type: string
           format: date-time
@@ -714,10 +714,17 @@ components:
       type: object
       required: [compatible, id, managed, platform, state]
       properties:
+        artifact_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
         compatible: { type: boolean }
         executable_path: { type: string }
+        executable_sha256:
+          type: string
+          pattern: '^[a-f0-9]{64}$'
         id: { type: string }
         installed_at: { type: string, format: date-time }
+        integrity_verified: { type: boolean }
         managed: { const: true }
         platform: { type: string }
         reason: { type: string }

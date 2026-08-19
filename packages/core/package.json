@@ -1,6 +1,6 @@
 {
   "name": "@shortdrama-router/core",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Provider-neutral contracts and routing for shortdrama-router",
   "type": "module",
   "license": "MIT",

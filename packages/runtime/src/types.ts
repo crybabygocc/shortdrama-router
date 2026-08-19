@@ -8,6 +8,10 @@ export type RuntimePlatform =
 
 export interface ProviderRuntimeArtifact {
   readonly archive: "binary" | "zip"
+  /** SHA-256 of the downloaded artifact, pinned by the provider adapter. */
+  readonly sha256: string
+  /** SHA-256 of the executable after extraction. */
+  readonly executable_sha256: string
   readonly executable_name?: string
   readonly maximum_bytes?: number
   readonly url: string
@@ -39,6 +43,11 @@ export interface ProviderRuntimeDefinition {
     readonly platform: RuntimePlatform
     readonly signal?: AbortSignal
   }) => Promise<ProviderRuntimeRelease>
+  /** Resolve a previously installed release without network access. */
+  readonly resolve_trusted_release: (options: {
+    readonly platform: RuntimePlatform
+    readonly version: string
+  }) => ProviderRuntimeRelease | undefined
   readonly version_command: readonly string[]
 }
 
@@ -49,10 +58,13 @@ export type ProviderRuntimeState =
   | "unsupported_platform"
 
 export interface ProviderRuntimeStatus {
+  readonly artifact_sha256?: string
   readonly compatible: boolean
   readonly executable_path?: string
+  readonly executable_sha256?: string
   readonly id: string
   readonly installed_at?: string
+  readonly integrity_verified?: boolean
   readonly managed: true
   readonly platform: string
   readonly reason?: string

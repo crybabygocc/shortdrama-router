@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
+import { RuntimeIntegrityError } from "@shortdrama-router/runtime"
 import type {
   AuthorizationMethod,
   ImageCreateRequest,
@@ -352,7 +353,16 @@ export class JimengProvider implements ProviderAdapter {
           reason_code: "dependency_version_unrecognized",
         }),
       }] as const
-    } catch {
+    } catch (error) {
+      if (error instanceof RuntimeIntegrityError) {
+        return [{
+          ...dependency,
+          available: true,
+          compatible: false,
+          reason: error.message,
+          reason_code: error.code,
+        }] as const
+      }
       return [{
         ...dependency,
         available: false,

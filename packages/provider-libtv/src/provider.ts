@@ -2,9 +2,12 @@ import { randomUUID } from "node:crypto"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import path from "node:path"
+import { RuntimeIntegrityError } from "@shortdrama-router/runtime"
 import type {
+  AuthorizationMethod,
   ImageCreateRequest,
   ProviderAdapter,
+  ProviderAuthorizationCompletion,
   ProviderConfigurationSelection,
   ProviderImageJobResult,
   ProviderModel,
@@ -13,7 +16,11 @@ import type {
   ProviderVideoJobResult,
   VideoCreateRequest,
 } from "@shortdrama-router/core"
-import { LibTvProcessRunner, type LibTvCommandRunner } from "./command.js"
+import {
+  LibTvProcessRunner,
+  type LibTvCommandRunner,
+  type LibTvWebAuthorizationSession,
+} from "./command.js"
 import {
   MemoryLibTvConfiguration,
   type LibTvConfigurationSource,
@@ -53,12 +60,24 @@ interface TerminalNode {
 }
 
 type Scalar = boolean | number | string
+type PendingAuthorizationState = "failed" | "pending" | "succeeded"
+
+interface PendingAuthorization {
+  readonly expiresAt: number
+  readonly id: string
+  readonly session: LibTvWebAuthorizationSession
+  reason?: string
+  state: PendingAuthorizationState
+}
+
+const authorizationLifetimeMs = 10 * 60_000
 
 export interface LibTvProviderOptions {
   readonly cliPath?: string
   readonly configuration?: LibTvConfigurationSource
   readonly configDir?: string
   readonly projectUuid?: string
+  readonly now?: () => Date
   readonly randomId?: () => string
   readonly runner?: LibTvCommandRunner
   readonly runtimeRootDir?: string
@@ -272,7 +291,11 @@ export class LibTvProvider implements ProviderAdapter {
   readonly metadata = {
     capabilities: {
       authorization: ["oauth"],
-      authorization_methods: [{ actions: ["status", "clear"], management: "external", method: "oauth" }],
+      authorization_methods: [{
+        actions: ["status", "begin", "complete", "cancel", "clear"],
+        management: "managed",
+        method: "oauth",
+      }],
       cancellation: [],
       configuration: true,
       generation: ["image", "video"],
@@ -297,6 +320,8 @@ export class LibTvProvider implements ProviderAdapter {
 
   readonly #configDir: string
   readonly #configuration: LibTvConfigurationSource
+  readonly #now: () => Date
+  #pending: PendingAuthorization | undefined
   readonly #randomId: () => string
   readonly #runner: LibTvCommandRunner
 
@@ -308,23 +333,52 @@ export class LibTvProvider implements ProviderAdapter {
     this.#configuration = options.configuration ?? new MemoryLibTvConfiguration(
       configuredProject === undefined ? {} : { project: configuredProject },
     )
+    this.#now = options.now ?? (() => new Date())
     this.#randomId = options.randomId ?? randomUUID
     this.#runner = options.runner ?? new LibTvProcessRunner(
       {
         ...(options.cliPath === undefined ? {} : { cliPath: options.cliPath }),
+        configDir: this.#configDir,
         ...(options.runtimeRootDir === undefined ? {} : { runtimeRootDir: options.runtimeRootDir }),
       },
     )
   }
 
   async getAuthorizationStatus(options: { readonly probe?: boolean; readonly signal?: AbortSignal } = {}) {
+    const pending = this.#pending
+    if (pending?.state === "pending" && pending.expiresAt <= this.#now().getTime()) {
+      pending.session.cancel()
+      pending.reason = "LibTV web login expired before completion"
+      pending.state = "failed"
+    }
+    if (pending?.state === "pending") {
+      return {
+        authorized: null,
+        configured: false,
+        expires_at: new Date(pending.expiresAt).toISOString(),
+        method: "oauth",
+        reason: "complete the LibTV login in the opened browser",
+        reason_code: "authorization_pending",
+        state: "pending",
+      } as const
+    }
+    if (pending?.state === "failed") {
+      return {
+        authorized: false,
+        configured: false,
+        method: "oauth",
+        reason: pending.reason ?? "LibTV web login failed",
+        reason_code: "authorization_failed",
+        state: "error",
+      } as const
+    }
     const configured = existsSync(path.join(this.#configDir, "credentials.json"))
     if (!configured) {
       return {
         authorized: false,
         configured: false,
         method: null,
-        reason: "run `libtv login web --open` with the official CLI",
+        reason: "start LibTV Web OAuth through the provider authorization API",
         reason_code: "authorization_not_configured",
         state: "not_configured",
       } as const
@@ -357,7 +411,75 @@ export class LibTvProvider implements ProviderAdapter {
     }
   }
 
+  async beginAuthorization(method: AuthorizationMethod, signal?: AbortSignal) {
+    if (method !== "oauth") throw new LibTvInputError("LibTV supports OAuth authorization only")
+    if (!this.#runner.beginWebAuthorization) {
+      throw new LibTvInputError("the configured LibTV command runner does not support managed web login")
+    }
+    const previous = this.#pending
+    if (previous) {
+      this.#pending = undefined
+      previous.session.cancel()
+      await previous.session.completed.catch(() => {})
+    }
+    const session = await this.#runner.beginWebAuthorization(signal)
+    const pending: PendingAuthorization = {
+      expiresAt: this.#now().getTime() + authorizationLifetimeMs,
+      id: this.#randomId(),
+      session,
+      state: "pending",
+    }
+    this.#pending = pending
+    void session.completed.then(() => {
+      if (this.#pending === pending && pending.state === "pending") pending.state = "succeeded"
+    }, () => {
+      if (this.#pending === pending && pending.state === "pending") {
+        pending.reason = "LibTV web login did not complete successfully"
+        pending.state = "failed"
+      }
+    })
+    return {
+      authorization_id: pending.id,
+      expires_at: new Date(pending.expiresAt).toISOString(),
+      login_url: session.login_url,
+      method: "oauth",
+    } as const
+  }
+
+  async completeAuthorization(completion: ProviderAuthorizationCompletion, signal?: AbortSignal) {
+    const pending = this.#pending
+    if (
+      completion.method !== "oauth"
+      || !pending
+      || completion.authorization_id !== pending.id
+      || pending.expiresAt <= this.#now().getTime()
+    ) {
+      throw new LibTvInputError("LibTV authorization completion is stale or invalid")
+    }
+    if (pending.state !== "succeeded") {
+      return this.getAuthorizationStatus({ probe: true, ...(signal === undefined ? {} : { signal }) })
+    }
+    this.#pending = undefined
+    return this.getAuthorizationStatus({ probe: true, ...(signal === undefined ? {} : { signal }) })
+  }
+
+  async cancelAuthorization(authorizationId: string) {
+    const pending = this.#pending
+    if (!pending || pending.id !== authorizationId) {
+      throw new LibTvInputError("LibTV authorization request was not found")
+    }
+    this.#pending = undefined
+    pending.session.cancel()
+    await pending.session.completed.catch(() => {})
+  }
+
   async clearAuthorization(signal?: AbortSignal) {
+    const pending = this.#pending
+    this.#pending = undefined
+    if (pending) {
+      pending.session.cancel()
+      await pending.session.completed.catch(() => {})
+    }
     await this.#runner.run(["logout"], signal)
   }
 
@@ -381,7 +503,16 @@ export class LibTvProvider implements ProviderAdapter {
           reason_code: recognized ? "dependency_version_incompatible" : "dependency_version_unrecognized",
         }),
       }] as const
-    } catch {
+    } catch (error) {
+      if (error instanceof RuntimeIntegrityError) {
+        return [{
+          ...dependency,
+          available: true,
+          compatible: false,
+          reason: error.message,
+          reason_code: error.code,
+        }] as const
+      }
       return [{
         ...dependency,
         available: false,

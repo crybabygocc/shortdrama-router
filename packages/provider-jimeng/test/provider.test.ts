@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
+import { RuntimeIntegrityError } from "@shortdrama-router/runtime"
 import {
   JimengProvider,
   JimengProcessRunner,
@@ -43,10 +44,19 @@ test("maps the current platform to the official managed Dreamina artifact", asyn
   })
   assert.equal(release.version, "1.4.17")
   assert.match(release.artifact.url, /dreamina_cli_darwin_arm64$/u)
+  assert.equal(release.artifact.sha256, "a9dadf84a3708493cb64e15ec3bcaa714604b62e2e917e8114b7236e5809cdeb")
+  assert.equal(release.artifact.executable_sha256, release.artifact.sha256)
   assert.deepEqual(jimengRuntimeDefinition.probe(JSON.stringify({ version: "build-one" })), {
     compatible: true,
     version: "build-one",
   })
+})
+
+test("refuses a newly advertised Dreamina release until its digest is trusted", async () => {
+  await assert.rejects(jimengRuntimeDefinition.resolve_release({
+    fetch: async () => Response.json({ version: "1.4.18" }),
+    platform: "darwin-arm64",
+  }), RuntimeIntegrityError)
 })
 
 const imageHelp = `

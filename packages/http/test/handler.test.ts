@@ -4,7 +4,7 @@ import {
   ShortDramaRouter,
   type ProviderAdapter,
 } from "@shortdrama-router/core"
-import type { ProviderRuntimeService } from "@shortdrama-router/runtime"
+import { RuntimeIntegrityError, type ProviderRuntimeService } from "@shortdrama-router/runtime"
 import { createRouterHttpHandler } from "../src/index.js"
 
 const provider: ProviderAdapter = {
@@ -99,6 +99,36 @@ test("installs and inspects provider runtimes through the management API", async
   }))
   assert.equal(response.status, 201)
   assert.equal((await response.json() as { executable_path: string }).executable_path, "/managed/test-provider")
+})
+
+test("returns a stable non-retryable error when runtime integrity verification fails", async () => {
+  const providerRuntimes: ProviderRuntimeService = {
+    async getStatus(provider) {
+      return { compatible: false, id: provider, managed: true, platform: "test", state: "not_installed" }
+    },
+    async install() {
+      throw new RuntimeIntegrityError("runtime digest did not match")
+    },
+    supports() {
+      return true
+    },
+  }
+  const handle = createRouterHttpHandler(new ShortDramaRouter({ providers: [provider] }), { providerRuntimes })
+  const response = await handle(new Request("http://router.local/api/v1/providers/test-provider/runtime", {
+    body: "{}",
+    headers: { "Content-Type": "application/json" },
+    method: "POST",
+  }))
+  assert.equal(response.status, 502)
+  assert.deepEqual(await response.json(), {
+    error: {
+      category: "configuration",
+      code: "runtime_integrity_failed",
+      message: "runtime digest did not match",
+      provider: "test-provider",
+      retryable: false,
+    },
+  })
 })
 
 test("creates and polls a video through the Fetch handler", async () => {

@@ -9,13 +9,14 @@ import {
   jimengManagedCliPath,
   libtvManagedCliPath,
   MemoryXiaoYunqueCredentials,
+  type LibTvCommandRunner,
 } from "../src/index.js"
 
 function response(data: Record<string, unknown>, status = 200) {
   return Response.json(data, { status })
 }
 
-test("binds built-in providers to one explicit managed runtime root", { skip: process.platform === "win32" }, async () => {
+test("binds built-in providers to one explicit root and rejects unverified executables", { skip: process.platform === "win32" }, async () => {
   const runtimeRootDir = await mkdtemp(path.join(tmpdir(), "shortdrama-router-root-"))
   try {
     const jimengCli = jimengManagedCliPath(runtimeRootDir)
@@ -31,9 +32,11 @@ test("binds built-in providers to one explicit managed runtime root", { skip: pr
     const jimeng = providers.find(provider => provider.id === "jimeng")
     const libtv = providers.find(provider => provider.id === "libtv")
     assert.equal(jimeng?.dependency_statuses?.[0]?.available, true)
-    assert.equal(jimeng?.dependency_statuses?.[0]?.version, "managed-test")
+    assert.equal(jimeng?.dependency_statuses?.[0]?.compatible, false)
+    assert.equal(jimeng?.dependency_statuses?.[0]?.reason_code, "runtime_integrity_failed")
     assert.equal(libtv?.dependency_statuses?.[0]?.available, true)
-    assert.equal(libtv?.dependency_statuses?.[0]?.version, "1.0.2")
+    assert.equal(libtv?.dependency_statuses?.[0]?.compatible, false)
+    assert.equal(libtv?.dependency_statuses?.[0]?.reason_code, "runtime_integrity_failed")
   } finally {
     await rm(runtimeRootDir, { force: true, recursive: true })
   }
@@ -45,6 +48,59 @@ test("the aggregate package installs all built-in providers before authorization
   assert.deepEqual(providers.map(provider => provider.id), ["jimeng", "libtv", "xiaoyunque"])
   assert.equal(providers.find(provider => provider.id === "xiaoyunque")?.authorization.state, "not_configured")
   assert.ok((await router.listProviderModels("xiaoyunque")).length > 0)
+})
+
+test("exposes LibTV managed Web OAuth through the public HTTP API", async () => {
+  const configDir = await mkdtemp(path.join(tmpdir(), "shortdrama-libtv-http-auth-"))
+  let finish!: (result: { stdout: string }) => void
+  const completed = new Promise<{ stdout: string }>(resolve => {
+    finish = resolve
+  })
+  const runner: LibTvCommandRunner = {
+    async beginWebAuthorization() {
+      return {
+        cancel() {},
+        completed,
+        login_url: "https://www.liblib.tv/zh?callback_url=http%3A%2F%2F127.0.0.1%3A5003%2Fcallback",
+      }
+    },
+    async run(args) {
+      if (args[0] === "account") return { stdout: JSON.stringify({ user: { id: 1 } }) }
+      throw new Error(`unexpected command: ${args.join(" ")}`)
+    },
+  }
+  try {
+    const router = createShortDramaRouter({
+      jimeng: false,
+      libtv: { configDir, randomId: () => "libtv-http-auth", runner },
+      xiaoyunque: false,
+    })
+    const handle = createRouterHttpHandler(router)
+    const started = await handle(new Request("http://router.local/api/v1/providers/libtv/authorization", {
+      body: JSON.stringify({ method: "oauth" }),
+      headers: { "Content-Type": "application/json" },
+      method: "POST",
+    }))
+    assert.equal(started.status, 201)
+    const request = await started.json() as { authorization_id: string; login_url: string }
+    assert.equal(request.authorization_id, "libtv-http-auth")
+    assert.match(request.login_url, /^https:\/\/www\.liblib\.tv\/zh\?/u)
+    const pending = await handle(new Request("http://router.local/api/v1/providers/libtv/authorization?probe=true"))
+    assert.equal((await pending.json() as { state: string }).state, "pending")
+
+    await writeFile(path.join(configDir, "credentials.json"), "{}")
+    finish({ stdout: path.join(configDir, "credentials.json") })
+    await new Promise(resolve => setImmediate(resolve))
+    const finished = await handle(new Request("http://router.local/api/v1/providers/libtv/authorization", {
+      body: JSON.stringify({ authorization_id: request.authorization_id, method: "oauth" }),
+      headers: { "Content-Type": "application/json" },
+      method: "PUT",
+    }))
+    assert.equal(finished.status, 200)
+    assert.equal((await finished.json() as { state: string }).state, "valid")
+  } finally {
+    await rm(configDir, { force: true, recursive: true })
+  }
 })
 
 test("completes XiaoYunque Access Key enrollment through the public HTTP API", async () => {
