@@ -1,6 +1,4 @@
 import { spawn } from "node:child_process"
-import { existsSync } from "node:fs"
-import { homedir } from "node:os"
 import path from "node:path"
 import {
   JimengAuthenticationError,
@@ -21,14 +19,8 @@ export interface JimengCommandRunner {
 export interface JimengProcessRunnerOptions {
   readonly cliPath?: string
   readonly maxOutputBytes?: number
+  readonly runtimeRootDir?: string
   readonly timeoutMs?: number
-}
-
-function defaultCliPath() {
-  const managed = jimengManagedCliPath()
-  if (existsSync(managed)) return managed
-  const installed = path.join(homedir(), ".local", "bin", "dreamina")
-  return existsSync(installed) ? installed : managed
 }
 
 function commandFailure(output: string) {
@@ -48,7 +40,7 @@ export class JimengProcessRunner implements JimengCommandRunner {
     if (options.cliPath !== undefined && !path.isAbsolute(options.cliPath)) {
       throw new Error("Dreamina CLI path must be absolute")
     }
-    this.#cliPath = options.cliPath ?? defaultCliPath()
+    this.#cliPath = options.cliPath ?? jimengManagedCliPath(options.runtimeRootDir)
     this.#maxOutputBytes = options.maxOutputBytes ?? 8 * 1024 * 1024
     this.#timeoutMs = options.timeoutMs ?? 30 * 60_000
   }

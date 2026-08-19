@@ -77,7 +77,9 @@ Authorization inspection distinguishes configured, verified, expiring and expire
 
 ## Managed official CLI providers
 
-The Jimeng and LibTV adapters execute their official local CLIs as argument arrays without a shell. A user-selected runtime installation downloads the platform artifact from the provider's official host into shortdrama-router's application data directory. The adapter executes that absolute path and does not modify PATH or shell profiles. An explicit application-supplied CLI path remains available for development and managed deployments.
+The Jimeng and LibTV adapters execute their official local CLIs as argument arrays without a shell. A user-selected runtime installation downloads the platform artifact from the provider's official host into shortdrama-router's application data directory. The adapter executes only that absolute managed path and does not modify PATH or shell profiles. It does not discover PATH entries or legacy user-directory CLIs. An explicit application-supplied CLI path remains available for development and managed deployments.
+
+The SDK's `runtimeRootDir` option is shared by the built-in providers and the server's runtime-management service. Default deployments therefore require no path wiring: an explicit install action makes the provider runtime available at the exact path the adapter will execute. A custom router or runtime service remains responsible for its own injected components.
 
 The npm package is the embeddable SDK. GitHub Releases additionally contain a Node.js single-executable application built from the same SDK, so end users do not need Node.js or npm. Runtime installation is exposed through both that executable and the loopback management API.
 

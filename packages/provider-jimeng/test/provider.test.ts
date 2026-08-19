@@ -1,13 +1,40 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import {
   JimengProvider,
+  JimengProcessRunner,
+  JimengUnavailableError,
   jimengRuntimeDefinition,
   type JimengCommandRunner,
 } from "../src/index.js"
+
+test("does not fall back to a legacy user-directory Dreamina CLI", { skip: process.platform === "win32" }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "jimeng-managed-only-"))
+  const previousHome = process.env.HOME
+  const previousDataDir = process.env.SHORTDRAMA_ROUTER_DATA_DIR
+  try {
+    const home = path.join(directory, "home")
+    const legacyCli = path.join(home, ".local", "bin", "dreamina")
+    await mkdir(path.dirname(legacyCli), { recursive: true })
+    await writeFile(legacyCli, "#!/bin/sh\nprintf '{\"version\":\"legacy\"}\\n'\n", { mode: 0o755 })
+    process.env.HOME = home
+    process.env.SHORTDRAMA_ROUTER_DATA_DIR = path.join(directory, "managed-data")
+
+    await assert.rejects(
+      new JimengProcessRunner().run(["--version"]),
+      JimengUnavailableError,
+    )
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousDataDir === undefined) delete process.env.SHORTDRAMA_ROUTER_DATA_DIR
+    else process.env.SHORTDRAMA_ROUTER_DATA_DIR = previousDataDir
+    await rm(directory, { force: true, recursive: true })
+  }
+})
 
 test("maps the current platform to the official managed Dreamina artifact", async () => {
   const release = await jimengRuntimeDefinition.resolve_release({

@@ -61,6 +61,7 @@ export interface LibTvProviderOptions {
   readonly projectUuid?: string
   readonly randomId?: () => string
   readonly runner?: LibTvCommandRunner
+  readonly runtimeRootDir?: string
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -309,7 +310,10 @@ export class LibTvProvider implements ProviderAdapter {
     )
     this.#randomId = options.randomId ?? randomUUID
     this.#runner = options.runner ?? new LibTvProcessRunner(
-      options.cliPath === undefined ? {} : { cliPath: options.cliPath },
+      {
+        ...(options.cliPath === undefined ? {} : { cliPath: options.cliPath }),
+        ...(options.runtimeRootDir === undefined ? {} : { runtimeRootDir: options.runtimeRootDir }),
+      },
     )
   }
 

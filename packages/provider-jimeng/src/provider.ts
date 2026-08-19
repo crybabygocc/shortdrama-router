@@ -34,6 +34,7 @@ export interface JimengProviderOptions {
   readonly configDir?: string
   readonly now?: () => Date
   readonly runner?: JimengCommandRunner
+  readonly runtimeRootDir?: string
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -209,7 +210,10 @@ export class JimengProvider implements ProviderAdapter {
     this.#configDir = options.configDir ?? path.join(homedir(), ".dreamina_cli")
     this.#now = options.now ?? (() => new Date())
     this.#runner = options.runner ?? new JimengProcessRunner(
-      options.cliPath === undefined ? {} : { cliPath: options.cliPath },
+      {
+        ...(options.cliPath === undefined ? {} : { cliPath: options.cliPath }),
+        ...(options.runtimeRootDir === undefined ? {} : { runtimeRootDir: options.runtimeRootDir }),
+      },
     )
   }
 

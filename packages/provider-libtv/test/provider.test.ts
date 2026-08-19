@@ -1,14 +1,41 @@
 import assert from "node:assert/strict"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import test from "node:test"
 import {
   libtvRuntimeDefinition,
+  LibTvProcessRunner,
   LibTvProvider,
+  LibTvUnavailableError,
   MemoryLibTvConfiguration,
   type LibTvCommandRunner,
 } from "../src/index.js"
+
+test("does not fall back to a legacy user-directory LibTV CLI", { skip: process.platform === "win32" }, async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "libtv-managed-only-"))
+  const previousHome = process.env.HOME
+  const previousDataDir = process.env.SHORTDRAMA_ROUTER_DATA_DIR
+  try {
+    const home = path.join(directory, "home")
+    const legacyCli = path.join(home, ".libtv", "libtv")
+    await mkdir(path.dirname(legacyCli), { recursive: true })
+    await writeFile(legacyCli, "#!/bin/sh\nprintf '1.0.2\\n'\n", { mode: 0o755 })
+    process.env.HOME = home
+    process.env.SHORTDRAMA_ROUTER_DATA_DIR = path.join(directory, "managed-data")
+
+    await assert.rejects(
+      new LibTvProcessRunner().run(["--version"]),
+      LibTvUnavailableError,
+    )
+  } finally {
+    if (previousHome === undefined) delete process.env.HOME
+    else process.env.HOME = previousHome
+    if (previousDataDir === undefined) delete process.env.SHORTDRAMA_ROUTER_DATA_DIR
+    else process.env.SHORTDRAMA_ROUTER_DATA_DIR = previousDataDir
+    await rm(directory, { force: true, recursive: true })
+  }
+})
 
 test("pins the managed LibTV runtime to the adapter-compatible release", async () => {
   const release = await libtvRuntimeDefinition.resolve_release({

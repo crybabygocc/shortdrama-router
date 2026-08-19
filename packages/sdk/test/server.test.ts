@@ -1,10 +1,37 @@
 import assert from "node:assert/strict"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import test from "node:test"
 import {
+  jimengManagedCliPath,
   ShortDramaRouter,
   startRouterServer,
   type ProviderAdapter,
 } from "../src/index.js"
+
+test("uses the custom runtime root for server installation status", { skip: process.platform === "win32" }, async () => {
+  const runtimeRootDir = await mkdtemp(path.join(tmpdir(), "shortdrama-server-root-"))
+  const executable = jimengManagedCliPath(runtimeRootDir)
+  await mkdir(path.dirname(executable), { recursive: true })
+  await writeFile(executable, "#!/bin/sh\nprintf '{\"version\":\"server-managed\"}\\n'\n", { mode: 0o755 })
+  const server = await startRouterServer({ port: 0, runtimeRootDir })
+  try {
+    const response = await fetch(`${server.url}/api/v1/providers/jimeng/runtime`)
+    assert.equal(response.status, 200)
+    const status = await response.json() as {
+      executable_path: string
+      state: string
+      version: string
+    }
+    assert.equal(status.executable_path, executable)
+    assert.equal(status.state, "installed")
+    assert.equal(status.version, "server-managed")
+  } finally {
+    await server.close()
+    await rm(runtimeRootDir, { force: true, recursive: true })
+  }
+})
 
 const provider: ProviderAdapter = {
   metadata: {

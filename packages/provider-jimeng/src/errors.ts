@@ -32,7 +32,7 @@ export class JimengPlanError extends RouterError {
 export class JimengUnavailableError extends RouterError {
   override readonly name = "JimengUnavailableError"
 
-  constructor(message = "the official Dreamina CLI is unavailable") {
+  constructor(message = "the managed Dreamina CLI runtime is not installed; install provider jimeng first") {
     super("jimeng_cli_unavailable", message, 503, { category: "configuration", provider: "jimeng", retryable: false })
   }
 }

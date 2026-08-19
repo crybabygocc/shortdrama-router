@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: shortdrama-router API
-  version: 0.4.0
+  version: 0.5.0
   description: >-
     OpenAI/OpenRouter-style audio, image and video routing for short-drama creation
     platforms. Models and authorization are discovered per provider.
@@ -130,6 +130,7 @@ paths:
       tags: [Providers]
       operationId: installProviderRuntime
       summary: Download and install a provider's official runtime for this platform
+      description: Explicitly installs the executable that the provider will use. Providers do not fall back to PATH or legacy user-directory CLIs.
       parameters:
         - $ref: '#/components/parameters/ProviderId'
       requestBody:

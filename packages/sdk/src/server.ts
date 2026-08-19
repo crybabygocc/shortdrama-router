@@ -20,6 +20,7 @@ export interface RouterServerOptions {
   readonly providerRuntimes?: ProviderRuntimeService
   readonly router?: ShortDramaRouter
   readonly routerKey?: string
+  readonly runtimeRootDir?: string
 }
 
 export interface RunningRouterServer {
@@ -84,10 +85,12 @@ export async function startRouterServer(options: RouterServerOptions = {}): Prom
     providers: [
       new JimengProvider({
         ...(options.jimengCliPath === undefined ? {} : { cliPath: options.jimengCliPath }),
+        ...(options.runtimeRootDir === undefined ? {} : { runtimeRootDir: options.runtimeRootDir }),
       }),
       new LibTvProvider({
         ...(options.libtvCliPath === undefined ? {} : { cliPath: options.libtvCliPath }),
         ...(options.libtvProjectUuid === undefined ? {} : { projectUuid: options.libtvProjectUuid }),
+        ...(options.runtimeRootDir === undefined ? {} : { runtimeRootDir: options.runtimeRootDir }),
       }),
       new XiaoYunqueProvider({
         ...(options.accessKey === undefined ? {} : { accessKey: options.accessKey }),
@@ -95,7 +98,9 @@ export async function startRouterServer(options: RouterServerOptions = {}): Prom
     ],
   })
   const handle = createRouterHttpHandler(router, {
-    providerRuntimes: options.providerRuntimes ?? createBuiltInRuntimeService(),
+    providerRuntimes: options.providerRuntimes ?? createBuiltInRuntimeService(
+      options.runtimeRootDir === undefined ? {} : { rootDir: options.runtimeRootDir },
+    ),
     ...(options.routerKey === undefined ? {} : {
       authorize: (request) => authorized(request.headers.get("authorization"), options.routerKey!),
     }),

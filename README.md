@@ -6,7 +6,7 @@
 
 `short drama` 直接表达短剧、漫剧和连续叙事视频场景，`router` 表示它采用与 OpenRouter 相同的多 provider 路由思路。仓库名固定使用全小写和中划线：`shortdrama-router`。
 
-> 当前状态：`0.4.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型与依赖发现、分方式授权状态、受管理的官方 CLI 运行时、本地 HTTP 服务、npm SDK 和无需 npm 的独立程序。
+> 当前状态：`0.5.0` / pre-alpha。已接入小云雀、LibTV 和即梦，提供 Seed Audio、生图、生视频、provider 模型与依赖发现、分方式授权状态、严格受管理的官方 CLI 运行时、本地 HTTP 服务、npm SDK 和无需 npm 的独立程序。
 
 ## 为什么使用 shortdrama-router
 
@@ -51,7 +51,7 @@ OpenRouter 的视频接口更适合多模型路由。项目沿用它的多 provi
 
 普通用户不需要安装 Node.js、npm、Dreamina CLI 或 LibTV CLI。GitHub Releases 提供包含 Node.js 运行时的 macOS、Linux 和 Windows 独立程序；下载对应平台制品后即可直接启动本地 API。
 
-即梦和 LibTV 插件需要官方 CLI。用户明确安装对应插件时，`shortdrama-router` 会识别当前平台、从官方地址下载 CLI，并安装到自己的应用数据目录。程序始终使用这个受管理的绝对路径，不修改 `PATH`、shell profile 或其他应用配置。小云雀直接使用 HTTP 能力，不需要额外运行时。
+即梦和 LibTV 插件需要官方 CLI。用户明确安装对应插件时，`shortdrama-router` 会识别当前平台、从官方地址下载 CLI，并安装到自己的应用数据目录。程序始终使用这个受管理的绝对路径，不修改 `PATH`、shell profile 或其他应用配置，也不会回退到用户以前安装在 `~/.local/bin`、`~/.libtv` 或 `PATH` 中的 CLI。小云雀直接使用 HTTP 能力，不需要额外运行时。
 
 独立程序中的 Provider 安装操作可以由宿主产品的插件界面调用，也可以直接由本地管理员执行：
 
@@ -67,7 +67,7 @@ GET  /api/v1/providers/{provider}/runtime
 POST /api/v1/providers/{provider}/runtime
 ```
 
-安装后仍需按 provider 的官方流程完成账号授权。`DREAMINA_CLI_PATH` 和 `LIBTV_CLI_PATH` 仅作为开发者显式覆盖，不再从任意 `PATH` 位置执行同名程序。
+安装后仍需按 provider 的官方流程完成账号授权。普通业务只需要调用安装、授权和生成接口，不需要读取 CLI 路径或实现任何回退逻辑。`DREAMINA_CLI_PATH` 和 `LIBTV_CLI_PATH` 仅作为开发者显式覆盖。
 
 ## npm 使用
 

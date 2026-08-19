@@ -30,16 +30,23 @@ export interface CreateShortDramaRouterOptions
   readonly jimeng?: JimengProviderOptions | false
   readonly libtv?: LibTvProviderOptions | false
   readonly providers?: readonly ProviderAdapter[]
+  readonly runtimeRootDir?: string
   readonly xiaoyunque?: XiaoYunqueProviderOptions | false
 }
 
 export function createShortDramaRouter(options: CreateShortDramaRouterOptions = {}) {
   const providers = [...(options.providers ?? [])]
   if (options.jimeng !== false) {
-    providers.push(new JimengProvider(options.jimeng ?? {}))
+    providers.push(new JimengProvider({
+      ...(options.runtimeRootDir === undefined ? {} : { runtimeRootDir: options.runtimeRootDir }),
+      ...(options.jimeng ?? {}),
+    }))
   }
   if (options.libtv !== false) {
-    providers.push(new LibTvProvider(options.libtv ?? {}))
+    providers.push(new LibTvProvider({
+      ...(options.runtimeRootDir === undefined ? {} : { runtimeRootDir: options.runtimeRootDir }),
+      ...(options.libtv ?? {}),
+    }))
   }
   if (options.xiaoyunque !== false) {
     providers.push(new XiaoYunqueProvider(options.xiaoyunque ?? {}))

@@ -1,14 +1,43 @@
 import assert from "node:assert/strict"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import test from "node:test"
 import {
   createRouterHttpHandler,
   createShortDramaRouter,
+  jimengManagedCliPath,
+  libtvManagedCliPath,
   MemoryXiaoYunqueCredentials,
 } from "../src/index.js"
 
 function response(data: Record<string, unknown>, status = 200) {
   return Response.json(data, { status })
 }
+
+test("binds built-in providers to one explicit managed runtime root", { skip: process.platform === "win32" }, async () => {
+  const runtimeRootDir = await mkdtemp(path.join(tmpdir(), "shortdrama-router-root-"))
+  try {
+    const jimengCli = jimengManagedCliPath(runtimeRootDir)
+    const libtvCli = libtvManagedCliPath(runtimeRootDir)
+    await mkdir(path.dirname(jimengCli), { recursive: true })
+    await mkdir(path.dirname(libtvCli), { recursive: true })
+    await writeFile(jimengCli, "#!/bin/sh\nprintf '{\"version\":\"managed-test\"}\\n'\n", { mode: 0o755 })
+    await writeFile(libtvCli, "#!/bin/sh\nprintf '1.0.2\\n'\n", { mode: 0o755 })
+
+    const providers = await createShortDramaRouter({ runtimeRootDir }).listProviders({
+      probeDependencies: true,
+    })
+    const jimeng = providers.find(provider => provider.id === "jimeng")
+    const libtv = providers.find(provider => provider.id === "libtv")
+    assert.equal(jimeng?.dependency_statuses?.[0]?.available, true)
+    assert.equal(jimeng?.dependency_statuses?.[0]?.version, "managed-test")
+    assert.equal(libtv?.dependency_statuses?.[0]?.available, true)
+    assert.equal(libtv?.dependency_statuses?.[0]?.version, "1.0.2")
+  } finally {
+    await rm(runtimeRootDir, { force: true, recursive: true })
+  }
+})
 
 test("the aggregate package installs all built-in providers before authorization", async () => {
   const router = createShortDramaRouter()

@@ -1,6 +1,6 @@
 {
   "name": "shortdrama-router",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "OpenAI/OpenRouter-style audio, image and video router for short-drama services",
   "type": "module",
   "license": "MIT",
@@ -22,12 +22,12 @@
     }
   },
   "devDependencies": {
-    "@shortdrama-router/core": "0.4.0",
-    "@shortdrama-router/http": "0.4.0",
-    "@shortdrama-router/provider-jimeng": "0.4.0",
-    "@shortdrama-router/provider-libtv": "0.4.0",
-    "@shortdrama-router/provider-xiaoyunque": "0.4.0",
-    "@shortdrama-router/runtime": "0.4.0"
+    "@shortdrama-router/core": "0.5.0",
+    "@shortdrama-router/http": "0.5.0",
+    "@shortdrama-router/provider-jimeng": "0.5.0",
+    "@shortdrama-router/provider-libtv": "0.5.0",
+    "@shortdrama-router/provider-xiaoyunque": "0.5.0",
+    "@shortdrama-router/runtime": "0.5.0"
   },
   "repository": {
     "type": "git",

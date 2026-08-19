@@ -19,7 +19,7 @@ export class LibTvAuthenticationError extends RouterError {
 export class LibTvUnavailableError extends RouterError {
   override readonly name = "LibTvUnavailableError"
 
-  constructor(message = "the official LibTV CLI is unavailable") {
+  constructor(message = "the managed LibTV CLI runtime is not installed; install provider libtv first") {
     super("libtv_cli_unavailable", message, 503, { category: "configuration", provider: "libtv", retryable: false })
   }
 }
